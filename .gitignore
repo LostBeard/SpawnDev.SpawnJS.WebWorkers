@@ -1,0 +1,51 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Blazor / WASM publish artifacts
+publish/
+[Pp]ublish[Oo]utput/
+wwwroot/_framework/
+wwwroot/_content/
+
+# Playwright
+.playwright/
+playwright-report/
+test-results/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+*.coverage
+*.coveragexml
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.log
+*.tmp

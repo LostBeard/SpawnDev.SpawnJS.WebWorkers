@@ -1,0 +1,1419 @@
+﻿using Microsoft.Extensions.DependencyInjection;
+using SpawnDev.SpawnJS.JSObjects;
+using SpawnDev.SpawnJS.Marshallers;
+using System.Reflection;
+using System.Security.Cryptography;
+using Array = SpawnDev.SpawnJS.JSObjects.Array;
+using TypeExtensions = SpawnDev.SpawnJS.Marshallers.TypeExtensions;
+
+namespace SpawnDev.SpawnJS.WebWorkers
+{
+    /// <summary>
+    /// Allows calling into and receiving calls from another instance of this app (same origin) in any scope<br/>
+    /// - Window<br/>
+    /// - DedicatedWorkerGlobalScope<br/>
+    /// - SharedWorkerGlobalScope<br/>
+    /// - ServiceWorkerGlobalScope
+    /// </summary>
+    public class ServiceCallDispatcher : AsyncCallDispatcher, IDisposable
+    {
+        /// <summary>
+        /// Gets or sets a value indicating whether the full exception string, including inner exceptions,  should be
+        /// included in error messages. This became the default in version 2.14.0, but can be set to false to revert to the previous behavior of only including the top-level exception message.
+        /// </summary>
+        public static bool FullExceptionString { get; set; } = true;
+        class CallSideParameter
+        {
+            public string Name { get; } = "";
+            public Type Type { get; }
+            public Func<object?> GetValue;
+            public CallSideParameter(string name, Func<object?> getter, Type type)
+            {
+                Name = name;
+                GetValue = getter;
+                Type = type;
+            }
+            public CallSideParameter(Func<object?> getter, Type type)
+            {
+                GetValue = getter;
+                Type = type;
+            }
+        }
+        class CallbackAction
+        {
+            public Delegate Target { get; set; }
+            public string Id { get; set; } = Guid.NewGuid().ToString();
+            public string RequestId { get; set; } = "";
+            public Type[] ParameterTypes { get; set; }
+            public CallbackAction(Delegate target, string requestId, Type[] parameterTypes)
+            {
+                Target = target;
+                RequestId = requestId;
+                ParameterTypes = parameterTypes;
+            }
+        }
+
+        /// <summary>
+        /// Returns true if the type is Transferable
+        /// </summary>
+        public static bool IsTransferable(Type type) => TransferableAttribute.IsTransferable(type);
+        /// <summary>
+        /// Returns true if the type is Transferable
+        /// </summary>
+        public static bool IsTransferable<T>() => IsTransferable(typeof(T));
+        /// <summary>
+        /// Returns true if the object type is Transferable
+        /// </summary>
+        public static bool IsTransferable<T>(T obj) => IsTransferable(typeof(T));
+        /// <summary>
+        /// Gets or sets the message port used for communication with support for transferable objects
+        /// </summary>
+        protected IMessagePort? _port { get; set; }
+        /// <summary>
+        /// Simple message port, used if _port is not available
+        /// </summary>
+        protected IMessagePortSimple? _portSimple { get; set; }
+        /// <summary>
+        /// Returns true if the target of this dispatcher is this instance
+        /// </summary>
+        public bool LocalInvoker { get; private set; }
+        /// <summary>
+        /// Information about the remote instance
+        /// </summary>
+        public ServiceCallDispatcherInfo? RemoteInfo { get; private set; } = null;
+        /// <summary>
+        /// Information about this instance
+        /// </summary>
+        public ServiceCallDispatcherInfo LocalInfo { get; }
+        /// <summary>
+        /// Returns true if there is at least 1 request waiting for a result
+        /// </summary>
+        public bool WaitingForResponse => _waiting.Count > 0;
+        /// <summary>
+        /// Static access to SpawnJSRuntime
+        /// </summary>
+        protected static SpawnJSRuntime JS => SpawnJSRuntime.Instance;
+        Dictionary<string, TaskCompletionSource<Array>> _waiting = new Dictionary<string, TaskCompletionSource<Array>>();
+        /// <summary>
+        /// Provides access to the application's service provider for resolving dependencies.
+        /// </summary>
+        /// <remarks>Intended for use by derived classes to obtain services registered in the
+        /// application's dependency injection container. The lifetime and scope of resolved services depend on the
+        /// configuration of the underlying service provider.</remarks>
+        protected IServiceProvider ServiceProvider { get; }
+        /// <summary>
+        /// Provides access to the collection of service descriptors used for dependency injection configuration.
+        /// </summary>
+        /// <remarks>This field is intended for use by derived classes to register or modify services
+        /// within the application's dependency injection container. Modifying this collection affects the services
+        /// available for injection throughout the application.</remarks>
+        protected IServiceCollection ServiceDescriptors { get; }
+        /// <summary>
+        /// Returns true if a message port is used and it supports transferable objects
+        /// </summary>
+        public bool MessagePortSupportsTransferable { get; private set; }
+        /// <summary>
+        /// Creates a new ServiceCallDispatcher that connects to the given message port
+        /// </summary>
+        /// <param name="webAssemblyServices"></param>
+        /// <param name="port"></param>
+        public ServiceCallDispatcher(IBackgroundServiceManager webAssemblyServices, IMessagePortSimple port)
+        {
+            WebAssemblyServices = webAssemblyServices;
+            ServiceProvider = webAssemblyServices.Services!;
+            ServiceDescriptors = webAssemblyServices.Descriptors;
+            if (port is IMessagePort messagePort)
+            {
+                _port = messagePort;
+                MessagePortSupportsTransferable = true;
+            }
+            _portSimple = port;
+            _portSimple.OnMessage += _worker_OnMessage;
+            _portSimple.OnMessageError += _port_OnError;
+            additionalCallArgs.Add(new CallSideParameter(() => this, typeof(ServiceCallDispatcher)));
+            LocalInfo = new ServiceCallDispatcherInfo { InstanceId = JS.InstanceId, GlobalThisTypeName = JS.GlobalScopeName };
+        }
+        IBackgroundServiceManager WebAssemblyServices;
+        /// <summary>
+        /// Creates a new ServiceCallDispatcher that only invokes local services
+        /// </summary>
+        /// <param name="webAssemblyServices"></param>
+        public ServiceCallDispatcher(IBackgroundServiceManager webAssemblyServices)
+        {
+            LocalInvoker = true;
+            WebAssemblyServices = webAssemblyServices;
+            ServiceProvider = webAssemblyServices.Services!;
+            ServiceDescriptors = webAssemblyServices.Descriptors;
+            additionalCallArgs.Add(new CallSideParameter(() => this, typeof(ServiceCallDispatcher)));
+            LocalInfo = new ServiceCallDispatcherInfo { InstanceId = JS.InstanceId, GlobalThisTypeName = JS.GlobalScopeName };
+            RemoteInfo = LocalInfo;
+            _oninit.SetResult(0);
+        }
+        private void _port_OnError()
+        {
+            JS.Log("_port_OnError");
+        }
+        private TaskCompletionSource<int> _oninit = new TaskCompletionSource<int>();
+        /// <summary>
+        /// Completes when connection has been established
+        /// </summary>
+        public Task WhenReady => _oninit.Task;
+        /// <summary>
+        /// Set to true once the ready flag has been sent
+        /// </summary>
+        public bool ReadyFlagSent { get; private set; } = false;
+        /// <summary>
+        /// Sends the ready flag to the remote endpoint<br/>
+        /// </summary>
+        public void SendReadyFlag()
+        {
+            if (_portSimple == null) return;
+            ReadyFlagSent = true;
+            var needsInfo = RemoteInfo == null;
+            _portSimple.PostMessage(new object?[] { "init", LocalInfo, needsInfo });
+        }
+        /// <summary>
+        /// Fired when a message event is received from the remote endpoint<br/>
+        /// ServiceCallDispatcher - the dispatcher that received the message<br/>
+        /// string - the event name<br/>
+        /// Array - the event data<br/>
+        /// </summary>
+        public event OnMessageDelegate OnMessage = default!;
+        /// <summary>
+        /// Represents a method that handles a message event dispatched by a ServiceCallDispatcher.
+        /// </summary>
+        /// <param name="sender">The ServiceCallDispatcher instance that triggered the event.</param>
+        /// <param name="eventName">The name of the event being handled. This identifies the type of message received.</param>
+        /// <param name="data">An array containing the event data associated with the message. The contents and types of the array elements
+        /// depend on the specific event.</param>
+        public delegate void OnMessageDelegate(ServiceCallDispatcher sender, string eventName, Array data);
+        /// <summary>
+        /// Busy state changed delegate<br/>
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="busy"></param>
+        public delegate void BusyStateChangedDelegate(ServiceCallDispatcher sender, bool busy);
+        /// <summary>
+        /// Fired when the busy state changes<br/>
+        /// </summary>
+        public event BusyStateChangedDelegate OnBusyStateChanged = default!;
+        private bool _busy = false;
+        private void CheckBusyStateChanged(bool fire = false)
+        {
+            if (_busy && _waiting.Count == 0)
+            {
+                _busy = false;
+                OnBusyStateChanged?.Invoke(this, _busy);
+            }
+            else if (!_busy && _waiting.Count > 0)
+            {
+                _busy = true;
+                OnBusyStateChanged?.Invoke(this, _busy);
+            }
+            else if (fire)
+            {
+                OnBusyStateChanged?.Invoke(this, _busy);
+            }
+        }
+        /// <summary>
+        /// Handles incoming messages from the remote endpoint<br/>
+        /// </summary>
+        /// <param name="e"></param>
+        protected async void _worker_OnMessage(MessageEvent e)
+        {
+            try
+            {
+                var args = e.GetData<Array>();
+                e.Dispose();
+                var argsLength = args.Length;
+                var msgType = args.Shift<string>(); // 0
+                switch (msgType)
+                {
+                    case "init":
+                        {
+                            var remoteInfo = args.Shift<ServiceCallDispatcherInfo>(); // 1
+                            var needsInfo = args.Shift<bool>(); // 2
+                            if (RemoteInfo == null)
+                            {
+                                RemoteInfo = remoteInfo;
+                                if (RemoteInfo != null)
+                                {
+                                    _oninit.TrySetResult(0);
+                                    CheckBusyStateChanged(true);
+                                }
+                            }
+                            if (needsInfo) SendReadyFlag();
+                        }
+                        break;
+                    case "cancelToken":
+                        var tokenId = args.Shift<string>(); // 1
+                        if (RemoteCancellationTokens.TryGetValue(tokenId, out var remoteTokenSource))
+                        {
+                            RemoteCancellationTokens.Remove(tokenId);
+                            remoteTokenSource.TokenSource.Cancel();
+                            remoteTokenSource.Dispose();
+                        }
+                        break;
+                    case "action":
+                        {
+                            var requestId = args.Shift<string>(); // 1
+                            if (_waiting.TryGetValue(requestId, out var req))
+                            {
+                                var actionId = args.Shift<string>(); // 2
+                                if (_actionHandles.TryGetValue(actionId, out var actionHandle))
+                                {
+                                    var actionArgs = new object?[actionHandle.ParameterTypes.Length];
+                                    if (actionArgs.Length > 0)
+                                    {
+                                        argsLength = args.Length;
+                                        if (actionArgs.Length != argsLength)
+                                        {
+                                            throw new Exception("Invalid argument count on Action callback");
+                                        }
+                                        for (var n = 0; n < actionArgs.Length; n++)
+                                        {
+                                            actionArgs[n] = args.GetItem(actionHandle.ParameterTypes[n], n);
+                                        }
+                                    }
+                                    actionHandle.Target.DynamicInvoke(actionArgs);
+                                }
+                            }
+                        }
+                        break;
+                    case "event":
+                        {
+                            var eventName = args.Shift<string>(); // 1
+                            OnMessage?.Invoke(this, eventName, args);
+                        }
+                        break;
+                    case "callback":
+                        {
+                            var requestId = args.Shift<string>(); // 1
+                            if (_waiting.TryGetValue(requestId, out var req))
+                            {
+                                _waiting.Remove(requestId);
+                                if (!req.Task.IsCompleted && req.TrySetResult(args)) return;
+                                CheckBusyStateChanged();
+                            }
+                        }
+                        break;
+                    case "call":
+                        {
+                            var serviceTypeName = args.Shift<string>();
+                            var serviceType = TypeExtensions.GetType(serviceTypeName);
+                            await HandleCallMessage(serviceType!, args, false);
+                        }
+                        break;
+                    case "msg":
+                        {
+                            var serviceTypeName = args.Shift<string>();
+                            var serviceType = TypeExtensions.GetType(serviceTypeName);
+                            await HandleCallMessage(serviceType!, args, true);
+                        }
+                        break;
+                    case "callKeyed":
+                        {
+                            var serviceTypeName = args.Shift<string>();
+                            var serviceType = TypeExtensions.GetType(serviceTypeName);
+                            var keyTypeName = args.Shift<string>();
+                            var keyType = TypeExtensions.GetType(keyTypeName);
+                            var key = args.Shift(keyType!);
+                            await HandleCallMessage(serviceType!, args, false, true, key);
+                        }
+                        break;
+                    case "msgKeyed":
+                        {
+                            var serviceTypeName = args.Shift<string>();
+                            var serviceType = TypeExtensions.GetType(serviceTypeName);
+                            var keyTypeName = args.Shift<string>();
+                            var keyType = TypeExtensions.GetType(keyTypeName);
+                            var key = args.Shift(keyType!);
+                            await HandleCallMessage(serviceType!, args, true, true, key);
+                        }
+                        break;
+                }
+                args.Dispose();
+            }
+            catch (Exception ex)
+            {
+                JS.Log($"ERROR: {ex.Message}");
+                JS.Log($"ERROR stack trace: {ex.StackTrace}");
+            }
+        }
+        /// <summary>
+        /// Executes the call message and sends the result back if needed
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="args"></param>
+        /// <param name="noReply"></param>
+        /// <param name="keyed"></param>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        async Task HandleCallMessage(Type serviceType, Array args, bool noReply, bool keyed = false, object? key = null)
+        {
+            string requestId = "";
+            object? retValue = null;
+            string? err = null;
+            MethodInfo? methodInfo = null;
+            try
+            {
+                requestId = args.Shift<string>(); // 1
+                var serializedMethodInfo = args.Shift<string>(); // 2
+                object?[]? callArgs0 = null;
+                methodInfo = SerializableMethodInfo.DeserializeMethodInfo(serializedMethodInfo);
+                if (methodInfo == null)
+                {
+                    throw new Exception($"Method signature not found.");
+                }
+                else if (methodInfo.ReflectedType == null)
+                {
+                    throw new Exception($"Invalid method signature not found. Invalid ReflectedType.");
+                }
+                object? service = null;
+                if (!methodInfo.IsStatic)
+                {
+                    // non-static methods calls must point at a registered service
+                    if (keyed)
+                    {
+                        service = await FindServiceAsync(serviceType, key!);
+                    }
+                    else
+                    {
+                        service = await FindServiceAsync(serviceType);
+                    }
+                    if (service == null)
+                    {
+                        throw new Exception($"Service type not found: {(serviceType == null ? "" : serviceType.Name)}");
+                    }
+                }
+                callArgs0 = await PostDeserializeArgs(requestId, methodInfo, args);
+                retValue = await methodInfo.InvokeAsync(service, callArgs0!);
+            }
+            catch (Exception ex)
+            {
+                // the call failed
+                err = FullExceptionString ? ExceptionSerializer.Serialize(ex) : ex.Message;
+#if DEBUG && false
+                JS.Log($"Execution of remote call failed: {ex.Message}");
+                JS.Log($"Stack: {ex.StackTrace ?? ""}");
+#endif
+            }
+            // Post call cleanup
+            // remove any uncancelled remote CancellationTokens for this request
+            var tokensToRemove = RemoteCancellationTokens.Values.Where(o => o.RequestId == requestId).ToArray();
+            foreach (var remoteTokenSource in tokensToRemove)
+            {
+                RemoteCancellationTokens.Remove(remoteTokenSource.TokenId);
+                remoteTokenSource.Dispose();
+            }
+            try
+            {
+                if (!string.IsNullOrEmpty(requestId) && !noReply)
+                {
+                    // Send notification of completion because there is a requestId
+                    var transferableList = new List<object>();
+                    // only check for transferables if transferables are supported and the return value is not null
+                    if (retValue != null && MessagePortSupportsTransferable)
+                    {
+                        if (retValue is byte[] bytes)
+                        {
+                            // same as when sending a byte[] as an arg...
+                            // change it to a Uint8Array reference so we can transfer its ArrayBuffer to prevent an uneccessary copy
+                            // it will be changed back to a byte[] on the receiving side
+                            var uint8Array = new Uint8Array(bytes);
+                            retValue = uint8Array;
+                            transferableList.Add(uint8Array.Buffer);
+                        }
+                        else if (methodInfo != null)
+                        {
+                            //var finalReturnType = methodInfo.GetFinalReturnType();
+                            var retValueType = retValue.GetType();
+                            var returnParameter = methodInfo.ReturnParameter;
+                            // check for WorkerTransfer attribute on the method return value
+                            var transferAttr = returnParameter.GetCustomAttribute<WorkerTransferAttribute>(true) ?? WorkerTransferAttribute.TransferRequiredDefault;
+                            var workerTransferSet = transferAttr.Transfer;
+                            if (workerTransferSet != WorkerTransferMode.TransferNone)
+                            {
+                                var maxDepth = transferAttr.Depth;
+                                var conversionInfo = TypeConversionInfo.GetTypeConversionInfo(retValueType);
+                                var propTransferable = conversionInfo.GetTransferablePropertyValues(retValue, workerTransferSet, maxDepth);
+                                transferableList.AddRange(propTransferable);
+                            }
+                        }
+                    }
+                    var callbackMsg = new object?[] { "callback", requestId, err, retValue };
+#if DEBUG && false
+                    JS.Log("worker.postMessage", new object[] { callbackMsg, transferableList.ToArray() });
+#endif
+                    if (_port != null) _port.PostMessage(callbackMsg, transferableList.ToArray());
+                    else _portSimple?.PostMessage(callbackMsg);
+                }
+            }
+            catch (Exception ex)
+            {
+                // failed to notify remote endpoint of result
+                JS.Log($"Failed to notify remote endpoint of result: {ex.Message}");
+            }
+        }
+        /// <summary>
+        /// Sends an event to the remote endpoint
+        /// </summary>
+        /// <param name="eventName">event name</param>
+        /// <param name="data">event data</param>
+        public void SendEvent(string eventName, object?[]? data = null)
+        {
+            var outMsg = new List<object?> { "event", eventName };
+            if (data != null) outMsg.AddRange(data);
+            _portSimple?.PostMessage(outMsg);
+        }
+        /// <summary>
+        /// Sends an event to the remote endpoint
+        /// </summary>
+        /// <param name="eventName">event name</param>
+        /// <param name="data">event data</param>
+        /// <param name="transferableList">List of transferable objects to be transferred</param>
+        public void SendEvent(string eventName, object?[] data, object[] transferableList)
+        {
+            var outMsg = new List<object?> { "event", eventName };
+            if (data != null) outMsg.AddRange(data);
+            _port?.PostMessage(outMsg, transferableList);
+        }
+        private async Task<object?> LocalCall(Type serviceType, MethodInfo methodInfo, object?[]? args = null)
+        {
+            if (methodInfo == null)
+            {
+                throw new NullReferenceException(nameof(methodInfo));
+            }
+            object? service = null;
+            if (!methodInfo.IsStatic)
+            {
+                // non-static methods calls must point at a registered service
+                service = await FindServiceAsync(serviceType);
+                if (service == null)
+                {
+                    throw new NullReferenceException(nameof(service));
+                }
+            }
+            return await methodInfo.InvokeAsync(service, args);
+        }
+        private async Task<object?> LocalCall(Type serviceType, object key, MethodInfo methodInfo, object?[]? args = null)
+        {
+            if (methodInfo == null)
+            {
+                throw new NullReferenceException(nameof(methodInfo));
+            }
+            object? service = null;
+            if (!methodInfo.IsStatic)
+            {
+                // non-static methods calls must point at a registered service
+                service = await FindServiceAsync(serviceType, key);
+                if (service == null)
+                {
+                    throw new NullReferenceException(nameof(service));
+                }
+            }
+            return await methodInfo.InvokeAsync(service, args);
+        }
+        /// <summary>
+        /// Calls the MethodInfo on remote context
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="serviceKey"></param>
+        /// <param name="methodInfo"></param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        public override async Task<object?> CallKeyed(Type serviceType, object serviceKey, MethodInfo methodInfo, object?[]? args = null)
+        {
+            if (LocalInvoker)
+            {
+                return await LocalCall(serviceType, serviceKey, methodInfo, args);
+            }
+            await WhenReady;
+            if (_portSimple == null)
+            {
+                throw new Exception("ServiceCallDispatcher.Call: port is null.");
+            }
+            if (serviceType == null)
+            {
+                throw new Exception("ServiceCallDispatcher.Call: method does not have a reflected type.");
+            }
+            var originCallableAttribute = methodInfo!.GetCustomAttribute<OriginCallableAttribute>(true);
+            var markedNoReply = originCallableAttribute?.NoReply ?? false;
+            var requestId = Guid.NewGuid().ToString();
+            var targetMethod = SerializableMethodInfo.SerializeMethodInfo(methodInfo);
+            var msgData = PreSerializeArgs(requestId, methodInfo, args, out var transferable);
+            var keyTypeName = TypeExtensions.GetFullName(serviceKey!.GetType());
+            var serviceTypeName = TypeExtensions.GetFullName(serviceType);
+            var msgOut = new List<object?> { markedNoReply ? "msgKeyed" : "callKeyed", serviceTypeName, keyTypeName, serviceKey, requestId, targetMethod };
+            msgOut.AddRange(msgData);
+            if (_port != null) _port.PostMessage(msgOut, transferable);
+            else _portSimple?.PostMessage(msgOut);
+            if (markedNoReply)
+            {
+                CheckBusyStateChanged();
+                return null;
+            }
+            var workerTask = new TaskCompletionSource<Array>();
+            _waiting.Add(requestId, workerTask);
+            CheckBusyStateChanged();
+            try
+            {
+                using var returnArray = await workerTask.Task;
+                // remove any request callbacks (currently only Action)
+                var keysToRemove = _actionHandles.Values.Where(o => o.RequestId == requestId).Select(o => o.Id).ToArray();
+                foreach (var keyToRemove in keysToRemove) _actionHandles.Remove(keyToRemove);
+                // get result or exception
+                string? err = returnArray.GetItem<string?>(0);
+                if (!string.IsNullOrEmpty(err))
+                {
+                    var exception = ExceptionSerializer.Deserialize(err)!;
+                    throw exception;
+                }
+                var finalReturnType = methodInfo.GetFinalReturnType();
+                if (finalReturnType.IsVoid())
+                {
+                    return null;
+                }
+                var ret = returnArray.GetItem(finalReturnType, 1);
+                return ret;
+            }
+            finally
+            {
+                CheckBusyStateChanged();
+            }
+        }
+        /// <summary>
+        /// Calls the MethodInfo on remote context
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="methodBase"></param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        public override async Task<object?> Call(Type serviceType, MethodInfo methodBase, object?[]? args = null)
+        {
+            if (LocalInvoker)
+            {
+                return await LocalCall(serviceType, methodBase, args);
+            }
+            await WhenReady;
+            if (_portSimple == null)
+            {
+                throw new Exception("ServiceCallDispatcher.Call: port is null.");
+            }
+            if (serviceType == null)
+            {
+                throw new Exception("ServiceCallDispatcher.Call: method does not have a reflected type.");
+            }
+            var originCallableAttribute = methodBase!.GetCustomAttribute<OriginCallableAttribute>(true);
+            var markedNoReply = originCallableAttribute?.NoReply ?? false;
+            var requestId = Guid.NewGuid().ToString();
+            var targetMethod = SerializableMethodInfo.SerializeMethodInfo(methodBase);
+            var serviceTypeName = TypeExtensions.GetFullName(serviceType);
+            var msgData = PreSerializeArgs(requestId, methodBase, args, out var transferable);
+            var msgOut = new List<object?> { markedNoReply ? "msg" : "call", serviceTypeName, requestId, targetMethod };
+            msgOut.AddRange(msgData);
+            if (_port != null) _port.PostMessage(msgOut, transferable);
+            else _portSimple?.PostMessage(msgOut);
+            if (markedNoReply)
+            {
+                CheckBusyStateChanged();
+                return null;
+            }
+            var workerTask = new TaskCompletionSource<Array>();
+            _waiting.Add(requestId, workerTask);
+            CheckBusyStateChanged();
+            try
+            {
+                using var returnArray = await workerTask.Task;
+                // remove any request callbacks (currently only Action)
+                var keysToRemove = _actionHandles.Values.Where(o => o.RequestId == requestId).Select(o => o.Id).ToArray();
+                foreach (var key in keysToRemove) _actionHandles.Remove(key);
+                // get result or exception
+                string? err = returnArray.GetItem<string?>(0);
+                if (!string.IsNullOrEmpty(err))
+                {
+                    var exception = ExceptionSerializer.Deserialize(err)!;
+                    throw exception;
+                }
+                var finalReturnType = methodBase is MethodInfo methodInfo ? methodInfo.GetFinalReturnType() : typeof(void);
+                if (finalReturnType.IsVoid())
+                {
+                    return null;
+                }
+                var ret = returnArray.GetItem(finalReturnType, 1);
+                return ret;
+            }
+            finally
+            {
+                CheckBusyStateChanged();
+            }
+        }
+        static List<Type> GenericActions = new List<Type> {
+            typeof(Action),
+            typeof(Action<>),
+            typeof(Action<,>),
+            typeof(Action<,,>),
+            typeof(Action<,,,>),
+            typeof(Action<,,,,>),
+            typeof(Action<,,,,,>),
+            typeof(Action<,,,,,,>),
+            typeof(Action<,,,,,,,>),
+            typeof(Action<,,,,,,,,>),
+            typeof(Action<,,,,,,,,,>),
+            typeof(Action<,,,,,,,,,,>),
+            typeof(Action<,,,,,,,,,,,>),
+            typeof(Action<,,,,,,,,,,,,>),
+        };
+        static List<Type> GenericFuncs = new List<Type> {
+            typeof(Func<>),
+            typeof(Func<,>),
+            typeof(Func<,,>),
+            typeof(Func<,,,>),
+            typeof(Func<,,,,>),
+            typeof(Func<,,,,,>),
+            typeof(Func<,,,,,,>),
+            typeof(Func<,,,,,,,>),
+            typeof(Func<,,,,,,,,>),
+            typeof(Func<,,,,,,,,,>),
+            typeof(Func<,,,,,,,,,,>),
+            typeof(Func<,,,,,,,,,,,>),
+            typeof(Func<,,,,,,,,,,,,>),
+        };
+        static bool IsFunc(Type type)
+        {
+            Type? generic = null;
+            if (type.IsGenericTypeDefinition) generic = type;
+            else if (type.IsGenericType) generic = type.GetGenericTypeDefinition();
+            if (generic == null) return false;
+            return GenericFuncs.Contains(generic);
+        }
+        static bool IsAction(Type type)
+        {
+            if (type == typeof(Action)) return true;
+            Type? generic = null;
+            if (type.IsGenericTypeDefinition) generic = type;
+            else if (type.IsGenericType) generic = type.GetGenericTypeDefinition();
+            if (generic == null) return false;
+            return GenericActions.Contains(generic);
+        }
+        private Dictionary<string, CallbackAction> _actionHandles = new Dictionary<string, CallbackAction>();
+        List<CallSideParameter> additionalCallArgs { get; } = new List<CallSideParameter>();
+        /// <summary>
+        /// Pre-serialization that prepares call arguments before they are sent to the remote endpoint via a postMessage call<br />
+        /// Any transferable objects are found in this stage as well and returned in an out param "transferable"
+        /// </summary>
+        /// <param name="requestId"></param>
+        /// <param name="methodInfo"></param>
+        /// <param name="args"></param>
+        /// <param name="transferable"></param>
+        /// <returns></returns>
+        private object?[] PreSerializeArgs(string requestId, MethodBase methodInfo, object?[]? args, out object[] transferable)
+        {
+            var transferableList = new List<object>();
+            var parameterInfos = methodInfo.GetParameters();
+            var transferableListAttributeParameter = parameterInfos.FirstOrDefault(o => typeof(IEnumerable<object>).IsAssignableFrom(o.ParameterType) && Attribute.IsDefined(o, typeof(TransferableListAttribute)));
+            var transferableListAttributeFound = transferableListAttributeParameter != null;
+            var argsLength = args == null ? 0 : args.Length;
+            object?[]? ret = new object?[argsLength];
+            var postSupportsTransferables = _port != null;
+            for (var i = 0; i < argsLength; i++)
+            {
+                var arg = args![i];
+                if (arg == null) continue;
+                var methodParamInfo = parameterInfos[i];
+                var methodParamType = methodParamInfo.ParameterType;
+                Type? genericType = null;
+                if (methodParamType.IsGenericTypeDefinition) genericType = methodParamType;
+                else if (methodParamType.IsGenericType) genericType = methodParamType.GetGenericTypeDefinition();
+                var coreType = genericType ?? methodParamType;
+                //var methodParamTypeName = methodParamInfo.ParameterType.Name;
+                var genericTypes = methodParamType.GenericTypeArguments;
+                // check if it is a [TransferableList] object[] parameter
+                if (transferableListAttributeParameter == methodParamInfo && arg is IEnumerable<object> objectArray)
+                {
+                    if (MessagePortSupportsTransferable)
+                    {
+                        transferableList.AddRange(objectArray);
+                    }
+                    // the parameter data is not actually passed, the parameter exists to tell the sender what data should be added to the transferables list
+                    // ret[i] = null; (implicit)
+                    continue;
+                }
+                if (IsCallSideParameter(methodParamInfo))
+                {
+                    // resolved on the other side
+                    // skip item ...
+                    // ret[i] = null; (implicit)
+                    continue;
+                }
+                else if (arg is Delegate argDelegate && !string.IsNullOrEmpty(requestId))
+                {
+                    if (IsAction(coreType))
+                    {
+                        var cb = new CallbackAction(argDelegate, requestId, genericTypes);
+                        _actionHandles[cb.Id] = cb;
+                        ret[i] = cb.Id;
+                    }
+                    else if (IsFunc(coreType))
+                    {
+                        throw new Exception("Func delegate parameters are not currently supported.");
+                    }
+                    else
+                    {
+                        throw new Exception("Unsupported delegate parameter type. Only Action delegates can be sent as parameters.");
+                    }
+                }
+                else if (arg is CancellationToken token)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        // "" represents an already cancelled token
+                        ret[i] = "";
+                    }
+                    else if (token.CanBeCanceled)
+                    {
+                        // a token id will be sent which can be referenced later to cancel the token
+                        // listen for the token cancellation event and send the cancel request at that time
+                        var tokenId = Guid.NewGuid().ToString();
+                        token.Register(() =>
+                        {
+                            // send cancel message to worker
+                            var callbackMsg = new List<object?> { "cancelToken", tokenId };
+                            _portSimple?.PostMessage(callbackMsg);
+                        });
+                        ret[i] = tokenId;
+                    }
+                    else
+                    {
+                        // null represents CancellationToken.None (the default)
+                        ret[i] = null;
+                    }
+                }
+                else if (MessagePortSupportsTransferable && arg is byte[] bytes)
+                {
+                    // to get better performance when sending byte arrays we convert it to a Uint8Array reference first, and add its array buffer to the transferables list.
+                    // it will still be read in on the other side as a byte array. this prevents 1 copying stage.
+                    var uint8Array = new Uint8Array(bytes);
+                    transferableList.Add(uint8Array.Buffer);
+                    ret[i] = uint8Array;
+                }
+                else if (MessagePortSupportsTransferable && !transferableListAttributeFound)
+                {
+                    // if a transfer list was not found...
+                    // Add required transferables like OffscreenCanvas
+                    // Add optional transferables enabled by WorkerTransfer attribute on the method parameter, the class type, or its properties
+                    var workerTransferAttribute = methodParamInfo.GetCustomAttribute<WorkerTransferAttribute>(true) ?? WorkerTransferAttribute.TransferRequiredDefault;
+                    var workerTransferSet = workerTransferAttribute.Transfer;
+                    if (workerTransferSet != WorkerTransferMode.TransferNone)
+                    {
+                        var argType = arg.GetType();
+                        var maxDepth = workerTransferAttribute.Depth;
+                        var conversionInfo = TypeConversionInfo.GetTypeConversionInfo(argType);
+                        var propTransferable = conversionInfo.GetTransferablePropertyValues(arg, workerTransferSet, maxDepth);
+                        transferableList.AddRange(propTransferable);
+                    }
+                    ret[i] = arg;
+                }
+                else
+                {
+                    ret[i] = arg;
+                }
+            }
+            transferable = transferableList.ToArray();
+            return ret;
+        }
+        /// <summary>
+        /// Holds references to deserialized CancellationTokens from requests<br/>
+        /// These will be disposed and removed when the request is completed<br/>
+        /// </summary>
+        Dictionary<string, RemoteCancellationTokenSource> RemoteCancellationTokens = new Dictionary<string, RemoteCancellationTokenSource>();
+        class RemoteCancellationTokenSource : IDisposable
+        {
+            public string TokenId { get; private set; }
+            public CancellationTokenSource TokenSource { get; private set; } = new CancellationTokenSource();
+            public string RequestId { get; private set; }
+            public RemoteCancellationTokenSource(string requestId, string tokenId)
+            {
+                RequestId = requestId;
+                TokenId = tokenId;
+            }
+            public void Dispose()
+            {
+                TokenSource.Dispose();
+            }
+        }
+        /// <summary>
+        /// Imports method call arguments from Javascript and finishes deserializing them<br />
+        /// Returns teh exact number of arguments the methodInfo uses, including default values if there was not enough passed in arguments<br />
+        /// CallSide arguments will also be resolved if any.
+        /// </summary>
+        /// <param name="requestId"></param>
+        /// <param name="methodInfo"></param>
+        /// <param name="callArgs"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        private async Task<object?[]?> PostDeserializeArgs(string requestId, MethodBase methodInfo, Array callArgs)
+        {
+            if (callArgs == null) return null;
+            var callArgsLength = callArgs.Length;
+            var methodsParamTypes = methodInfo.GetParameters();
+            if (callArgsLength > methodsParamTypes.Count())
+            {
+                throw new Exception("PostDeserializeArgs argument count mismatch. Too many arguments.");
+            }
+            var ret = new object?[methodsParamTypes.Length];
+            for (var i = 0; i < ret.Length; i++)
+            {
+                var methodParam = methodsParamTypes[i];
+                var methodParamType = methodParam.ParameterType;
+                var genericTypes = methodParamType.GenericTypeArguments;
+                var (resolved, value) = await TryResolveCallSideParamValue(methodParam);
+                if (resolved)
+                {
+                    ret[i] = value;
+                }
+                else if (typeof(CancellationToken) == methodParamType && !string.IsNullOrEmpty(requestId))
+                {
+                    // Create a local action that can be called to relay the call to the remote endpoint
+                    var tokenId = callArgs.GetItem<string?>(i);
+                    if (tokenId == null)
+                    {
+                        // default token
+                        ret[i] = CancellationToken.None;
+                    }
+                    else if (tokenId == "")
+                    {
+                        // already cancelled
+                        ret[i] = new CancellationToken(true);
+                    }
+                    else
+                    {
+                        // can be cancelled
+                        var remoteCancellationToken = new RemoteCancellationTokenSource(requestId, tokenId);
+                        RemoteCancellationTokens[tokenId] = remoteCancellationToken;
+                        ret[i] = remoteCancellationToken.TokenSource.Token;
+                    }
+                }
+                else if (typeof(Delegate).IsAssignableFrom(methodParamType) && !string.IsNullOrEmpty(requestId))
+                {
+                    // Create a local action that can be called to relay the call to the remote endpoint
+                    var actionId = callArgs.GetItem<string>(i);
+                    if (genericTypes.Length == 0)
+                    {
+                        ret[i] = new Action(() =>
+                        {
+                            var callbackMsg = new List<object?> { "action", requestId, actionId };
+                            _portSimple?.PostMessage(callbackMsg);
+                        });
+                    }
+                    else
+                    {
+                        ret[i] = CreateTypedAction(genericTypes, new Action<object?[]>((args) =>
+                        {
+                            var callbackMsg = new List<object?> { "action", requestId, actionId };
+                            callbackMsg.AddRange(args);
+                            _portSimple?.PostMessage(callbackMsg);
+                        }));
+                    }
+                }
+                else if (i < callArgsLength)
+                {
+                    ret[i] = callArgs.GetItem(methodParamType, i);
+                }
+                else if (methodParam.HasDefaultValue)
+                {
+                    ret[i] = methodParam.DefaultValue;
+                }
+                else
+                {
+                    throw new Exception("PostDeserializeArgs argument count mismatch. Not enough arguments.");
+                }
+            }
+            return ret;
+        }
+        class RuntimeService
+        {
+            public object? ServiceKey { get; set; }
+            public bool IsKeyed { get; set; }
+            public Type ServiceType { get; set; } = default!;
+            public Type ImplementationType { get; set; } = default!;
+            public object? Service { get; set; }
+        }
+        List<RuntimeService> RuntimeServices = new List<RuntimeService>();
+        bool IsCallSideParameter(ParameterInfo methodParam)
+        {
+            // FromServices
+            var fromServiceAttr = methodParam.GetCustomAttribute<FromServicesAttribute>();
+            if (fromServiceAttr != null) return true;
+            // FromKeyedServices
+            var fromKeyedServiceAttr = methodParam.GetCustomAttribute<FromKeyedServicesAttribute>();
+            if (fromKeyedServiceAttr != null) return true;
+            // Callside
+            if (GetCallSideParameter(methodParam) != null) return true;
+            return false;
+        }
+        async Task<object?> FindServiceAsync(Type serviceType, object key)
+        {
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && Object.Equals(o.ServiceKey, key));
+            if (runtimeServiceInfo != null)
+            {
+                if (runtimeServiceInfo.Service == null)
+                {
+                    // try creating with the key as a parameter, if it fails we'll try without it
+                    try
+                    {
+                        runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, key);
+                    }
+                    catch { }
+                    if (runtimeServiceInfo.Service == null)
+                    {
+                        runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType);
+                    }
+                    if (runtimeServiceInfo.Service is IAsyncService asyncService)
+                    {
+                        await asyncService.Ready;
+                    }
+                }
+                return runtimeServiceInfo.Service;
+            }
+#if NET8_0_OR_GREATER
+            var ret = await ServiceProvider.FindServiceAsync(serviceType, key);
+            return ret;
+#else
+            return null;
+#endif
+        }
+        /// <summary>
+        /// Adds a runtime service
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="implementationType"></param>
+        /// <returns></returns>
+        public override async Task<bool> AddService(Type serviceType, Type implementationType)
+        {
+            var added = await Run(() => _AddService(serviceType, implementationType));
+            return added;
+        }
+        /// <summary>
+        /// Add a runtime keyed service
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="implementationType"></param>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        public override async Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key)
+        {
+            var keyType = key?.GetType();
+            using var jsKey = key == null ? null : JS.ReturnMe<SpawnJSObject>(key);
+            var added = await Run(() => _AddKeyedService(serviceType, implementationType, keyType!, jsKey));
+            return added;
+        }
+        private async Task<bool> _AddService(Type serviceType, Type implementationType)
+        {
+            var service = await FindServiceAsync(serviceType);
+            if (service != null) return false;
+            RuntimeServices.Add(new RuntimeService
+            {
+                ServiceType = serviceType,
+                ImplementationType = implementationType ?? serviceType,
+                IsKeyed = false,
+            });
+            return true;
+        }
+        private async Task<bool> _AddKeyedService(Type serviceType, Type implementationType, Type keyType, SpawnJSObject? jsKey)
+        {
+            var key = keyType == null ? null : jsKey?.JSRef?.As(keyType);
+            var service = await FindServiceAsync(serviceType, key!);
+            if (service != null) return false;
+            RuntimeServices.Add(new RuntimeService
+            {
+                ServiceType = serviceType,
+                ImplementationType = implementationType ?? serviceType,
+                ServiceKey = key,
+                IsKeyed = true,
+            });
+            return true;
+        }
+        static object[] DeserializeArray(Array args, Type[] argTypes, int count = -1)
+        {
+            if (args == null) throw new NullReferenceException(nameof(args));
+            if (argTypes == null) throw new NullReferenceException(nameof(argTypes));
+            if (count == -1) count = argTypes.Length;
+            var callArgs = new object[count];
+            for (var i = 0; i < args.Length; i++)
+            {
+                var argType = argTypes[i];
+                callArgs[i] = args.GetItem(argType, i)!;
+            }
+            return callArgs;
+        }
+        private bool _RemoveService(Type serviceType)
+        {
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && !o.IsKeyed);
+            if (runtimeServiceInfo != null)
+            {
+                RuntimeServices.Remove(runtimeServiceInfo);
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// Removes the runtime service
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <returns>true if the service was removed</returns>
+        public override async Task<bool> RemoveService(Type serviceType)
+        {
+            if (LocalInvoker)
+            {
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && !o.IsKeyed);
+                if (runtimeServiceInfo != null)
+                {
+                    RuntimeServices.Remove(runtimeServiceInfo);
+                    return true;
+                }
+                return false;
+            }
+            else
+            {
+                var removed = await Run(() => _RemoveService(serviceType));
+                return removed;
+            }
+        }
+        private bool _ServiceExists(Type serviceType)
+        {
+            var serviceDescriptor = ServiceDescriptors.FindServiceDescriptor(serviceType, true);
+            if (serviceDescriptor != null) return true;
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && !o.IsKeyed);
+            return runtimeServiceInfo != null;
+        }
+        /// <summary>
+        /// Returns true if the service is found
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <returns></returns>
+        public override async Task<bool> ServiceExists(Type serviceType)
+        {
+            if (LocalInvoker)
+            {
+                var serviceDescriptor = ServiceDescriptors.FindServiceDescriptor(serviceType, true);
+                if (serviceDescriptor != null) return true;
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && !o.IsKeyed);
+                return runtimeServiceInfo != null;
+            }
+            else
+            {
+                var exists = await Run(() => _ServiceExists(serviceType));
+                return exists;
+            }
+        }
+        private bool _KeyedServiceExists(Type serviceType, Type? keyType, SpawnJSObject? jsKey)
+        {
+            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var serviceDescriptor = ServiceDescriptors.FindKeyedServiceDescriptor(serviceType, serviceKey!, true);
+            if (serviceDescriptor != null) return true;
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
+            return runtimeServiceInfo != null;
+        }
+        /// <summary>
+        /// Returns true if the service is found
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="serviceKey"></param>
+        /// <returns></returns>
+        public override async Task<bool> KeyedServiceExists(Type serviceType, object serviceKey)
+        {
+            if (LocalInvoker)
+            {
+                var serviceDescriptor = ServiceDescriptors.FindKeyedServiceDescriptor(serviceType, serviceKey, true);
+                if (serviceDescriptor != null) return true;
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
+                return runtimeServiceInfo != null;
+            }
+            else
+            {
+                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                var keyType = serviceKey?.GetType();
+                var exists = await Run(() => _KeyedServiceExists(serviceType, keyType, jsKey));
+                return exists;
+            }
+        }
+        private bool _RemoveKeyedService(Type serviceType, Type? keyType, SpawnJSObject? jsKey)
+        {
+            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
+            if (runtimeServiceInfo != null)
+            {
+                RuntimeServices.Remove(runtimeServiceInfo);
+                return true;
+            }
+            return false;
+        }
+        /// <summary>
+        /// Remove a runtime keyed service
+        /// </summary>
+        /// <param name="serviceType"></param>
+        /// <param name="serviceKey"></param>
+        /// <returns></returns>
+        public override async Task<bool> RemoveKeyedService(Type serviceType, object serviceKey)
+        {
+            if (LocalInvoker)
+            {
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
+                if (runtimeServiceInfo != null)
+                {
+                    RuntimeServices.Remove(runtimeServiceInfo);
+                    return true;
+                }
+                return false;
+            }
+            else
+            {
+                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                var keyType = serviceKey?.GetType();
+                var removed = await Run(() => _RemoveKeyedService(serviceType, keyType, jsKey));
+                return removed;
+            }
+        }
+        private async Task _CreateKeyedService(string constructorInfoJson, Type serviceType, Type? implementationType, Type? keyType, SpawnJSObject? jsKey, Array? args, Type[]? argTypes, [TransferableList] object[]? transferables)
+        {
+            var constructorInfo = SerializableMethodInfo.DeserializeConstructorInfoInfo(constructorInfoJson);
+            var isKeyed = keyType != null;
+            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed == isKeyed && (!isKeyed || Object.Equals(o.ServiceKey, serviceKey)));
+            if (runtimeServiceInfo != null)
+            {
+                throw new Exception("Service already exists");
+            }
+            runtimeServiceInfo = new RuntimeService
+            {
+                ImplementationType = (implementationType ?? serviceType)!,
+                ServiceKey = serviceKey,
+                IsKeyed = isKeyed,
+                ServiceType = (serviceType ?? implementationType)!,
+            };
+            if (argTypes == null || argTypes.Length == 0 || args == null || args.Length == 0)
+            {
+                if (isKeyed)
+                {
+                    try
+                    {
+                        runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, serviceKey!);
+                    }
+                    catch { }
+                }
+                if (runtimeServiceInfo.Service == null)
+                {
+                    runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType);
+                }
+            }
+            else
+            {
+                if (constructorInfo != null)
+                {
+                    var callArgs = await PostDeserializeArgs(null!, constructorInfo, args);
+                    runtimeServiceInfo.Service = constructorInfo.Invoke(callArgs);// ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, callArgs);
+                }
+                else
+                {
+                    var callArgs = DeserializeArray(args, argTypes);
+                    runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, callArgs);
+                }
+            }
+            RuntimeServices.Add(runtimeServiceInfo);
+        }
+        /// <summary>
+        /// Create a new runtime service
+        /// </summary>
+        /// <param name="constructorInfo"></param>
+        /// <param name="serviceType"></param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        public override Task CreateService(ConstructorInfo constructorInfo, Type? serviceType, object[]? args)
+        {
+            return CreateKeyedService(constructorInfo, serviceType, null!, args);
+        }
+        /// <summary>
+        /// Create a new runtime keyed service
+        /// </summary>
+        /// <param name="constructorInfo"></param>
+        /// <param name="serviceType"></param>
+        /// <param name="serviceKey">If null, a non-keyed service will be created</param>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        public override async Task CreateKeyedService(ConstructorInfo constructorInfo, Type? serviceType, object serviceKey, object[]? args)
+        {
+            var implementationType = constructorInfo.ReflectedType!;
+            var argTypes = constructorInfo.GetParameters().Select(o => o.ParameterType).ToArray();
+            if (LocalInvoker)
+            {
+                var isKeyed = serviceKey != null;
+                if (serviceKey != null)
+                {
+                    var serviceDescriptor = ServiceDescriptors.FindKeyedServiceDescriptor(serviceType!, serviceKey!, true);
+                    if (serviceDescriptor != null) throw new Exception("Service already exists");
+                }
+                else
+                {
+                    var serviceDescriptor = ServiceDescriptors.FindServiceDescriptor(serviceType!, true);
+                    if (serviceDescriptor != null) throw new Exception("Service already exists");
+                }
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed == isKeyed && (!isKeyed || Object.Equals(o.ServiceKey, serviceKey)));
+                if (runtimeServiceInfo != null)
+                {
+                    throw new Exception("Service already exists");
+                }
+                runtimeServiceInfo = new RuntimeService
+                {
+                    ServiceType = serviceType ?? implementationType,
+                    ImplementationType = implementationType ?? serviceType!,
+                    ServiceKey = serviceKey,
+                    IsKeyed = isKeyed,
+                };
+                if (argTypes == null || argTypes.Length == 0 || args == null || args.Length == 0)
+                {
+                    if (isKeyed)
+                    {
+                        try
+                        {
+                            runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, serviceKey!);
+                        }
+                        catch { }
+                    }
+                    if (runtimeServiceInfo.Service == null)
+                    {
+                        runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType);
+                    }
+                }
+                else
+                {
+                    runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType, args);
+                }
+                RuntimeServices.Add(runtimeServiceInfo);
+            }
+            else
+            {
+                if (!WhenReady.IsCompleted) await WhenReady;
+                var preparedArgs = PreSerializeArgs(null!, constructorInfo, args, out var transferables);
+                using var argsArray = JS.ReturnMe<Array>(preparedArgs);
+                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                var keyType = serviceKey?.GetType();
+                var constructorInfoJson = SerializableMethodInfo.SerializeMethodInfo(constructorInfo);
+                await Run(() => _CreateKeyedService(constructorInfoJson, serviceType!, implementationType, keyType, jsKey, argsArray, argTypes, transferables));
+            }
+        }
+        async Task<object?> FindServiceAsync(Type serviceType)
+        {
+            if (serviceType == typeof(ServiceCallDispatcher))
+            {
+                return this;
+            }
+            var ret = await ServiceProvider.FindServiceAsync(serviceType);
+            if (ret == null)
+            {
+                var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && Object.Equals(o.ServiceKey, null));
+                if (runtimeServiceInfo != null)
+                {
+                    if (runtimeServiceInfo.Service == null)
+                    {
+                        runtimeServiceInfo.Service = ActivatorUtilities.CreateInstance(ServiceProvider, runtimeServiceInfo.ImplementationType);
+                        if (runtimeServiceInfo.Service is IAsyncService asyncService)
+                        {
+                            await asyncService.Ready;
+                        }
+                    }
+                    return runtimeServiceInfo.Service;
+                }
+            }
+            return ret;
+        }
+        async Task<(bool, object?)> TryResolveCallSideParamValue(ParameterInfo methodParam)
+        {
+            object? value = null;
+            // service
+            var fromServiceAttr = methodParam.GetCustomAttribute<FromServicesAttribute>();
+            if (fromServiceAttr != null)
+            {
+                value = await FindServiceAsync(methodParam.ParameterType);
+                return (true, value);
+            }
+            // keyed service
+            var fromKeyedServiceAttr = methodParam.GetCustomAttribute<FromKeyedServicesAttribute>();
+            if (fromKeyedServiceAttr != null)
+            {
+                var serviceKey = fromKeyedServiceAttr.Key;
+                value = await FindServiceAsync(methodParam.ParameterType, serviceKey!);
+                return (true, value);
+            }
+            // call side
+            var callSideParam = GetCallSideParameter(methodParam);
+            if (callSideParam != null)
+            {
+                value = callSideParam.GetValue();
+                return (true, value);
+            }
+            return (false, value);
+        }
+        CallSideParameter? GetCallSideParameter(ParameterInfo p)
+        {
+            return additionalCallArgs.Where(o => (o.Name == "" || o.Name == p.Name) && o.Type == p.ParameterType).FirstOrDefault();
+        }
+        /// <summary>
+        /// Returns true if this instance has been disposed
+        /// </summary>
+        public bool IsDisposed { get; private set; } = false;
+        /// <summary>
+        /// Clean up resources
+        /// </summary>
+        /// <param name="disposing"></param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (IsDisposed) return;
+            IsDisposed = true;
+        }
+        /// <summary>
+        /// Dispose resources
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        /// <summary>
+        /// Finalizer
+        /// </summary>
+        ~ServiceCallDispatcher()
+        {
+            Dispose(false);
+        }
+        /// <summary>
+        /// Creates a typed Action
+        /// </summary>
+        public static Action<T0> CreateTypedActionT1<T0>(Action<object?[]> arg) => new Action<T0>((t0) => arg(new object[] { t0! }));
+        /// <summary>
+        /// Creates a typed Action
+        /// </summary>
+        public static Action<T0, T1> CreateTypedActionT2<T0, T1>(Action<object?[]> arg) => new Action<T0, T1>((t0, t1) => arg(new object[] { t0!, t1! }));
+        /// <summary>
+        /// Creates a typed Action
+        /// </summary>
+        public static Action<T0, T1, T2> CreateTypedActionT3<T0, T1, T2>(Action<object?[]> arg) => new Action<T0, T1, T2>((t0, t1, t2) => arg(new object[] { t0!, t1!, t2! }));
+        /// <summary>
+        /// Creates a typed Action
+        /// </summary>
+        public static Action<T0, T1, T2, T3> CreateTypedActionT4<T0, T1, T2, T3>(Action<object?[]> arg) => new Action<T0, T1, T2, T3>((t0, t1, t2, t3) => arg(new object[] { t0!, t1!, t2!, t3! }));
+        /// <summary>
+        /// Creates a typed Action
+        /// </summary>
+        public static Action<T0, T1, T2, T3, T4> CreateTypedActionT5<T0, T1, T2, T3, T4>(Action<object?[]> arg) => new Action<T0, T1, T2, T3, T4>((t0, t1, t2, t3, t4) => arg(new object[] { t0!, t1!, t2!, t3!, t4! }));
+        private object CreateTypedAction(Type[] typ1, Action<object?[]> arg)
+        {
+            var method = typeof(ServiceCallDispatcher).GetMethod($"CreateTypedActionT{typ1.Length}", BindingFlags.Public | BindingFlags.Static);
+            if (method == null) throw new Exception("CreateTypedAction: Unable to find method with given paramter count.");
+            var gmeth = method.MakeGenericMethod(typ1);
+            var genericAction = gmeth.Invoke(null, new object[] { arg });
+            return genericAction!;
+        }
+    }
+}
