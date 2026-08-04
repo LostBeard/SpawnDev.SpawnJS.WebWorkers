@@ -1,0 +1,36 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<!-- Required so this library's wwwroot is available in the consumer's output. -->
+	<Import Project="Microsoft.AspNetCore.StaticWebAssets.props" Condition="Exists('$(MSBuildThisFileDirectory).\Microsoft.AspNetCore.StaticWebAssets.props')" />
+
+	<PropertyGroup>
+		<!-- Default ON (opt-out). Set to false to skip building the classic/module bundle
+		     entrypoints (main.classic.js / main.module.js); the app then relies on the
+		     module-worker path (spawndev.spawnjs.webworkers.module.js) as before. -->
+		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == ''">true</SpawnJSWebWorkersClassicBundle>
+
+		<!-- Make the app's OWN boot config bundler-friendly (static, Rollup-followable asset imports) so the
+		     classic/module bundle entrypoints can be produced from - and reference - the app's OWN _framework
+		     output (no duplication, no separate inner build). This applies to the whole app; main.js uses the
+		     same _framework and boots unchanged. Fingerprinting/SRI are unaffected. Opting out of the bundle
+		     leaves this alone. A consumer can still override it explicitly. -->
+		<WasmBundlerFriendlyBootConfig Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(WasmBundlerFriendlyBootConfig)' == ''">true</WasmBundlerFriendlyBootConfig>
+
+		<!-- Publish-only, opt-in: rename the underscore-prefixed output folders so a published app can run
+		     where paths starting with '_' are illegal (browser extensions). Empty = no rename (default).
+		     Set to a folder name (must NOT start with '_' or '.'), e.g.
+		       <SpawnJSWebWorkersFrameworkFolderName>framework</SpawnJSWebWorkersFrameworkFolderName>
+		       <SpawnJSWebWorkersContentFolderName>content</SpawnJSWebWorkersContentFolderName>  (only if _content is used)
+		     Renames the folder AND rewrites references in the published js/html/json/css (incl. main.classic.js).
+		     Sharp tool: an app that builds a "_framework"/"_content" path at runtime from a variable will break. -->
+		<SpawnJSWebWorkersFrameworkFolderName Condition="'$(SpawnJSWebWorkersFrameworkFolderName)' == ''"></SpawnJSWebWorkersFrameworkFolderName>
+		<SpawnJSWebWorkersContentFolderName Condition="'$(SpawnJSWebWorkersContentFolderName)' == ''"></SpawnJSWebWorkersContentFolderName>
+
+		<_SpawnJSWebWorkersBuildTasksAssembly Condition="'$(_SpawnJSWebWorkersBuildTasksAssembly)' == ''">$(MSBuildThisFileDirectory)..\tasks\netstandard2.0\SpawnDev.SpawnJS.WebWorkers.Build.dll</_SpawnJSWebWorkersBuildTasksAssembly>
+		<_SpawnJSWebWorkersBuildContentDir Condition="'$(_SpawnJSWebWorkersBuildContentDir)' == ''">$(MSBuildThisFileDirectory)..\buildcontent</_SpawnJSWebWorkersBuildContentDir>
+	</PropertyGroup>
+
+	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersBundle" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" />
+	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersRenameFolders" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" />
+
+</Project>

@@ -1,0 +1,14 @@
+{
+  "name": "spawnjs-webworkers-rollup-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DEV-ONLY: builds buildcontent/rollup.bundled.mjs (self-contained, wasm-inlined @rollup/wasm-node + plugins + SpawnJS build logic). Not shipped; its OUTPUT is.",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/wasm-node": "^4.34.6",
+    "esbuild": "^0.24.0",
+    "rollup-plugin-import-file": "^1.0.1"
+  }
+}

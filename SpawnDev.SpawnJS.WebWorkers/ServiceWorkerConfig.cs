@@ -12,7 +12,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public ServiceWorkerStartupRegistration Register { get; set; } = ServiceWorkerStartupRegistration.Register;
         /// <summary>
-        /// Defaults to WebWorkerService.WebWorkerJSScript ('spawndev.spawnjs.webworkers.js')<br/>
+        /// The service worker script URL. When null, WebWorkerService uses the default entrypoint: the bundled
+        /// "main.classic.js" (or "main.module.js" when Options.Type == "module") if the SpawnJS.WebWorkers bundle
+        /// was produced for this build, otherwise the legacy "spawndev.spawnjs.webworkers.module.js".<br/>
         /// </summary>
         public string? ScriptURL { get; set; }
         /// <summary>

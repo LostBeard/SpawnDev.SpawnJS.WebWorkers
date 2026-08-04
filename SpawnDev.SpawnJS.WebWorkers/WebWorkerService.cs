@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SpawnDev.SpawnJS.JSObjects;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text.Json;
 using System.Web;
 using Array = SpawnDev.SpawnJS.JSObjects.Array;
@@ -89,14 +90,23 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// This app instance's id
         /// </summary>
         public string InstanceId { get; }
-        ///// <summary>
-        ///// The script location used for new worker instances
-        ///// </summary>
-        //public string WebWorkerJSScript { get; } = "spawndev.spawnjs.webworkers.js";
         /// <summary>
-        /// The script location used for new module worker instances
+        /// The legacy module worker script (imports the event-holder, then ./_framework/dotnet.js).<br/>
+        /// Used when the bundled entrypoints are not available (<see cref="NonModuleScriptAvailable"/> is false).
         /// </summary>
         public string WebWorkerModuleJSScript { get; } = "spawndev.spawnjs.webworkers.module.js";
+        /// <summary>
+        /// The bundled NON-MODULE worker entrypoint (Rollup UMD, event-holder folded in).<br/>
+        /// Produced at build time by the SpawnDev.SpawnJS.WebWorkers build targets; used by default for
+        /// new Worker/SharedWorker/ServiceWorker instances when <see cref="NonModuleScriptAvailable"/> is true.
+        /// </summary>
+        public string WebWorkerClassicJSScript { get; } = "main.classic.js";
+        /// <summary>
+        /// The bundled MODULE worker entrypoint (Rollup ES, event-holder folded in).<br/>
+        /// Produced at build time alongside <see cref="WebWorkerClassicJSScript"/>; used when a module
+        /// worker is explicitly requested and <see cref="NonModuleScriptAvailable"/> is true.
+        /// </summary>
+        public string WebWorkerBundledModuleJSScript { get; } = "main.module.js";
         /// <summary>
         /// The script used for instance interconnect shared worker instance (if used)
         /// </summary>
@@ -178,8 +188,14 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     var path = locationUri.GetLeftPart(UriPartial.Path);
                     AppBaseUri = path.Substring(0, path.LastIndexOf("/") + 1);
                 }
-                //WebWorkerJSScript = new Uri(new Uri(AppBaseUri), WebWorkerJSScript).ToString();
                 WebWorkerModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerModuleJSScript).ToString();
+                WebWorkerClassicJSScript = new Uri(new Uri(AppBaseUri), WebWorkerClassicJSScript).ToString();
+                WebWorkerBundledModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerBundledModuleJSScript).ToString();
+                // The bundle build stamps [assembly: SpawnJSWebWorkersClassicBundle(true)] into the app when it
+                // produced the bundled entrypoints (main.classic.js / main.module.js). Read it once here (sync
+                // reflection, works in every scope, no DOM/fetch); absent -> fall back to the legacy module path.
+                NonModuleScriptAvailable = System.Reflection.Assembly.GetEntryAssembly()?
+                    .GetCustomAttribute<SpawnJSWebWorkersClassicBundleAttribute>()?.Available ?? false;
                 Locks = JS.Get<LockManager>("navigator.locks");
                 LockManagerSupported = Locks != null;
                 var queryParams = HttpUtility.ParseQueryString(locationUri.Query);
@@ -220,9 +236,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 InterConnectSupported = SharedWebWorkerSupported && BroadcastChannelSupported;
 #if DEBUG && false
                 Console.WriteLine($"InterConnectSupported: {InterConnectSupported}");
-                Console.WriteLine("hostEnvironment.BaseAddress: " + hostEnvironment.BaseAddress);
                 Console.WriteLine("AppBaseUri: " + AppBaseUri);
-                Console.WriteLine("WebWorkerJSScript: " + WebWorkerJSScript);
+                Console.WriteLine("WebWorkerModuleJSScript: " + WebWorkerModuleJSScript);
+                Console.WriteLine("WebWorkerClassicJSScript: " + WebWorkerClassicJSScript);
 #endif
                 var hardwareConcurrency = JS.Get<int?>("navigator.hardwareConcurrency");
                 MaxWorkerCount = hardwareConcurrency ?? 1; // assume 1 if undefined/null (Safari 14.1 it is null, but it supports workers)
@@ -232,10 +248,6 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 }
                 ;
                 if (ServiceWorkerConfig == null) ServiceWorkerConfig = new ServiceWorkerConfig { Register = ServiceWorkerStartupRegistration.None };
-                //if (string.IsNullOrEmpty(ServiceWorkerConfig.ScriptURL))
-                //{
-                //    ServiceWorkerConfig.ScriptURL = WebWorkerJSScript;
-                //}
                 Local = new ServiceCallDispatcher(WebAssemblyServices);
                 if (isTaskPoolWorker)
                 {
@@ -660,6 +672,13 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 {
                     //Console.WriteLine($"WebWorkerService: ServiceWorkerGlobalScope");
                     // 
+                    // Check if a ServiceWorkerEventHandler is registered and if not run a the default one to release the events
+                    var serviceWorkerEventHandler = ServiceProvider.GetService<ServiceWorkerEventHandler>();
+                    if(serviceWorkerEventHandler == null)
+                    {
+                        _defaultServiceWorkerEventHandler = (ServiceWorkerEventHandler)ActivatorUtilities.CreateInstance(ServiceProvider, typeof(ServiceWorkerEventHandler));
+                        _ = _defaultServiceWorkerEventHandler.Ready;
+                    }
                 }
                 else
                 {
@@ -668,6 +687,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 await RegisterInstance();
             }
         }
+        ServiceWorkerEventHandler? _defaultServiceWorkerEventHandler;
 
         /// <summary>
         /// Returns true if this instance has notified other instances
@@ -690,8 +710,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
             await UpdateInstancesViaLocks();
         }
         /// <summary>
-        /// Registers scriptURL as the service worker.<br/>
-        /// The service worker script should import "spawndev.spawnjs.webworkers.js" to function as expected<br/>
+        /// Registers scriptURL as the service worker. Pass one of the SpawnJS.WebWorkers entrypoints
+        /// (main.classic.js for a classic worker, main.module.js for a module worker).<br/>
         /// </summary>
         /// <param name="scriptURL"></param>
         /// <param name="options"></param>
@@ -702,10 +722,18 @@ namespace SpawnDev.SpawnJS.WebWorkers
             ServiceWorkerConfig.Options = options;
             return RegisterServiceWorker();
         }
-        public bool NonModuleScriptAvailable { get; } = false;
         /// <summary>
-        /// Registers ServiceWorkerConfig.ScriptURL as the service worker.<br/>
-        /// ServiceWorkerConfig.ScriptURL, by default, is "spawndev.spawnjs.webworkers.js"<br/>
+        /// True when the bundled worker entrypoints (<see cref="WebWorkerClassicJSScript"/> /
+        /// <see cref="WebWorkerBundledModuleJSScript"/>) were produced for this build and are available to load.<br/>
+        /// Set at startup from <see cref="SpawnJSWebWorkersClassicBundleAttribute"/> which the build targets stamp
+        /// into the app. When true, worker creation defaults to the non-module bundle (<c>main.classic.js</c>);
+        /// when false, it falls back to the legacy module worker script.
+        /// </summary>
+        public bool NonModuleScriptAvailable { get; private set; } = false;
+        /// <summary>
+        /// Registers ServiceWorkerConfig.ScriptURL as the service worker. When ScriptURL is null it defaults to
+        /// the bundled entrypoint (main.classic.js, or main.module.js when Options.Type == "module") if the
+        /// SpawnJS.WebWorkers bundle was produced, otherwise the legacy module worker script.<br/>
         /// </summary>
         /// <returns></returns>
         public async Task RegisterServiceWorker()
@@ -715,8 +743,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 if (string.IsNullOrEmpty(ServiceWorkerConfig.ScriptURL))
                 {
                     ServiceWorkerConfig.Options ??= new ServiceWorkerRegistrationOptions();
-                    ServiceWorkerConfig.Options.Type = "module";
-                    ServiceWorkerConfig.ScriptURL = WebWorkerModuleJSScript;
+                    var (url, isModule) = ResolveWorkerEntry(ServiceWorkerConfig.Options.Type == "module");
+                    ServiceWorkerConfig.ScriptURL = url;
+                    ServiceWorkerConfig.Options.Type = isModule ? "module" : null;
                 }
                 var kvps = new Dictionary<string, string>();
                 if (ServiceWorkerConfig.ImportServiceWorkerAssets)
@@ -852,6 +881,27 @@ namespace SpawnDev.SpawnJS.WebWorkers
         }
 
         /// <summary>
+        /// Resolves the default worker entry script and whether it must load as a module, honoring
+        /// the bundled-entrypoint availability (<see cref="NonModuleScriptAvailable"/>).<br/>
+        /// When the bundle is available it prefers the non-module entrypoint (<c>main.classic.js</c>)
+        /// for compatibility, unless a module worker is explicitly requested (then <c>main.module.js</c>).
+        /// When the bundle is not available it falls back to the legacy module worker script
+        /// (<c>spawndev.spawnjs.webworkers.module.js</c>).
+        /// </summary>
+        /// <param name="preferModule">True to request the module entrypoint (e.g. WorkerOptions.Type == "module").</param>
+        /// <returns>The resolved script URL and whether it must be loaded as a module worker.</returns>
+        private (string ScriptUrl, bool IsModule) ResolveWorkerEntry(bool preferModule = false)
+        {
+            if (NonModuleScriptAvailable)
+            {
+                return preferModule
+                    ? (WebWorkerBundledModuleJSScript, true)
+                    : (WebWorkerClassicJSScript, false);
+            }
+            return (WebWorkerModuleJSScript, true);
+        }
+
+        /// <summary>
         /// Creates a new a WebWorker instance and returns it when it when it is ready for use.
         /// </summary>
         /// <returns></returns>
@@ -866,12 +916,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
             {
                 queryParams["indexHtml"] = WorkerIndexHtml;
             }
-            var scriptUrl = WebWorkerModuleJSScript;
+            var (scriptUrl, isModule) = ResolveWorkerEntry();
             if (queryParams.Count > 0)
             {
                 scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
             }
-            var worker = new Worker(scriptUrl, new WorkerOptions { Type = "module" });
+            var worker = new Worker(scriptUrl, new WorkerOptions { Type = isModule ? "module" : null });
             var webWorker = new WebWorker(worker, WebAssemblyServices);
             await webWorker.WhenReady;
             return webWorker;
@@ -894,12 +944,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
             {
                 queryParams["indexHtml"] = WorkerIndexHtml;
             }
-            var scriptUrl = WebWorkerModuleJSScript;
+            var (scriptUrl, isModule) = ResolveWorkerEntry();
             if (queryParams.Count > 0)
             {
                 scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
             }
-            var worker = new Worker(scriptUrl, new WorkerOptions { Type = "module" });
+            var worker = new Worker(scriptUrl, new WorkerOptions { Type = isModule ? "module" : null });
             var webWorker = new WebWorker(worker, WebAssemblyServices);
             return webWorker;
         }
@@ -935,8 +985,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             }
             if (string.IsNullOrEmpty(webWorkerOptions.ScriptUrl))
             {
-                webWorkerOptions.WorkerOptions.Type = "module";
-                webWorkerOptions.ScriptUrl = WebWorkerModuleJSScript;
+                var (url, isModule) = ResolveWorkerEntry(webWorkerOptions.WorkerOptions.Type == "module");
+                webWorkerOptions.ScriptUrl = url;
+                webWorkerOptions.WorkerOptions.Type = isModule ? "module" : null;
             }
             if (webWorkerOptions.QueryParams.Count > 0)
             {
@@ -976,8 +1027,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             }
             if (string.IsNullOrEmpty(webWorkerOptions.ScriptUrl))
             {
-                webWorkerOptions.WorkerOptions.Type = "module";
-                webWorkerOptions.ScriptUrl = WebWorkerModuleJSScript;
+                var (url, isModule) = ResolveWorkerEntry(webWorkerOptions.WorkerOptions.Type == "module");
+                webWorkerOptions.ScriptUrl = url;
+                webWorkerOptions.WorkerOptions.Type = isModule ? "module" : null;
             }
             if (queryParams.Count > 0)
             {
@@ -1002,12 +1054,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
             {
                 queryParams["indexHtml"] = WorkerIndexHtml;
             }
-            var scriptUrl = WebWorkerModuleJSScript;
+            var (scriptUrl, isModule) = ResolveWorkerEntry();
             if (queryParams.Count > 0)
             {
                 scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
             }
-            var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = "module" });
+            var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = isModule ? "module" : null });
             var sharedWebWorker = new SharedWebWorker(sharedWorkerName, sharedWorker, WebAssemblyServices);
             await sharedWebWorker.WhenReady;
             return sharedWebWorker;
@@ -1026,12 +1078,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
             {
                 queryParams["indexHtml"] = WorkerIndexHtml;
             }
-            var scriptUrl = WebWorkerModuleJSScript;
+            var (scriptUrl, isModule) = ResolveWorkerEntry();
             if (queryParams.Count > 0)
             {
                 scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
             }
-            var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = "module" });
+            var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = isModule ? "module" : null });
             var sharedWebWorker = new SharedWebWorker(sharedWorkerName, sharedWorker, WebAssemblyServices);
             return sharedWebWorker;
         }

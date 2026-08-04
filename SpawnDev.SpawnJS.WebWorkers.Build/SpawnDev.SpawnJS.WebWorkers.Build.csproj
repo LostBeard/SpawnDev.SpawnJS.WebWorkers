@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- MSBuild custom-task assembly for SpawnDev.SpawnJS.WebWorkers.
+	     Mirrors SpawnDev.BlazorJS.WebWorkers.Build. Compiled output is dropped into the
+	     main library project's tasks\ folder, which is packed into the NuGet package's
+	     tasks\ folder and referenced by build\*.props (UsingTask). -->
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>10.0</LangVersion>
+		<Nullable>enable</Nullable>
+		<OutDir>..\SpawnDev.SpawnJS.WebWorkers\tasks\netstandard2.0</OutDir>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<Version>1.0.0</Version>
+		<IsPackable>false</IsPackable>
+		<Optimize>False</Optimize>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.14.28" />
+	</ItemGroup>
+
+</Project>

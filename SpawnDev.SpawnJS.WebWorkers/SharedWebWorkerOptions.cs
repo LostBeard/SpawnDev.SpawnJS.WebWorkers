@@ -12,10 +12,10 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public SharedWorkerOptions? WorkerOptions { get; set; }
         /// <summary>
-        /// The URL to the worker script to load.<br/>
-        /// Defaults to: 
-        /// module - "spawndev.spawnjs.webworkers.module.js"<br/>
-        /// classic - "spawndev.spawnjs.webworkers.js"<br/>
+        /// The URL to the worker script to load. When null, WebWorkerService picks the default entrypoint:<br/>
+        /// - the bundled non-module entrypoint "main.classic.js" (or "main.module.js" when WorkerOptions.Type
+        ///   == "module") if the SpawnJS.WebWorkers bundle was produced for this build;<br/>
+        /// - otherwise the legacy module worker script "spawndev.spawnjs.webworkers.module.js".<br/>
         /// </summary>
         public string? ScriptUrl { get; set; } = null;
     }

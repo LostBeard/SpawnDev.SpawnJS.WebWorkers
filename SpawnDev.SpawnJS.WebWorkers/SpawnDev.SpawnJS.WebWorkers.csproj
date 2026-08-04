@@ -4,7 +4,7 @@
 		<TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>1.0.0-preview.1</Version>
+		<Version>1.0.0-preview.5</Version>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -31,8 +31,43 @@
 		<None Include="..\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
+	<!-- Classic/module bundle build integration (mirrors SpawnDev.BlazorJS.WebWorkers).
+	     build\      -> MSBuild props/targets auto-imported into the consumer's build.
+	     buildcontent\ -> Rollup entry (loader.js), self-contained Rollup (rollup.bundled.mjs), event-holder.
+	     tasks\      -> compiled MSBuild task assembly (from SpawnDev.SpawnJS.WebWorkers.Build).
+	     These folders are not part of the library compile; they are packed into the NuGet package. -->
 	<ItemGroup>
-		<PackageReference Include="SpawnDev.SpawnJS" Version="1.1.0" />
+		<Compile Remove="build\**" />
+		<Content Remove="build\**" />
+		<EmbeddedResource Remove="build\**" />
+		<None Remove="build\**" />
+
+		<Compile Remove="buildcontent\**" />
+		<Content Remove="buildcontent\**" />
+		<EmbeddedResource Remove="buildcontent\**" />
+		<None Remove="buildcontent\**" />
+
+		<Compile Remove="tasks\**" />
+		<Content Remove="tasks\**" />
+		<EmbeddedResource Remove="tasks\**" />
+		<None Remove="tasks\**" />
+
+		<Content Include="build\**">
+			<Pack>true</Pack>
+			<PackagePath>build</PackagePath>
+		</Content>
+		<Content Include="buildcontent\**">
+			<Pack>true</Pack>
+			<PackagePath>buildcontent</PackagePath>
+		</Content>
+		<Content Include="tasks\**">
+			<Pack>true</Pack>
+			<PackagePath>tasks</PackagePath>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="SpawnDev.SpawnJS" Version="1.1.1" />
 	</ItemGroup>
 
 	<PropertyGroup>

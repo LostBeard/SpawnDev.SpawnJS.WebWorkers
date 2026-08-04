@@ -24,7 +24,7 @@ SpawnDev.SpawnJS.WebWorkers is the [SpawnDev.SpawnJS](https://github.com/LostBea
 
 - **It targets plain .Net WASM, not Blazor.** SpawnJS provides Javascript interop for .Net WebAssembly without Blazor and without the JSON serialization layer - references are held as integer slots rather than `JSObject` proxies. There is no `WebAssemblyHostBuilder`, `RootComponents`, or `BlazorJSRunAsync()`.
 - **.Net WASM has no built-in dependency injection container**, so SpawnJS ships a minimal one (`SpawnJSAppBuilder`). You can use it, or wire your own.
-- **Module workers are required (current limitation).** Workers are created as ES module workers (`new Worker(url, { type: "module" })`) because the .Net WASM `dotnet.js` runtime is loaded via `import`. See [Module workers are required](#module-workers-are-required) below.
+- **Your app is bundled to run in workers.** SpawnJS.WebWorkers builds two extra JavaScript entrypoints (`main.classic.js` and `main.module.js`) from your app's own output so it can run as a classic or module Worker/SharedWorker/ServiceWorker. This needs `WasmBundlerFriendlyBootConfig` (set automatically) and Node.js on PATH at build/publish. See [Worker bundle](#worker-bundle) below.
 
 If you are using Blazor WASM, use [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers) instead.
 
@@ -44,15 +44,58 @@ Tested working in the following browsers. Note that Chrome on Android does not c
 
 If you have ***ANY*** issues or questions please open an issue [here](https://github.com/LostBeard/SpawnDev.SpawnJS.WebWorkers/issues) on GitHub.
 
-## Module workers are required
+## Worker bundle
 
-Unlike SpawnDev.BlazorJS.WebWorkers, which loads a classic worker script, SpawnDev.SpawnJS.WebWorkers loads every worker as an **ES module worker**. The .Net WASM runtime (`dotnet.js`) is an ES module and is brought in with `import`, so the worker bootstrap (`spawndev.spawnjs.webworkers.module.js`) is itself a module and the worker is created with `{ type: "module" }`. This applies to dedicated workers, shared workers, and service workers.
+SpawnDev.SpawnJS.WebWorkers builds two extra JavaScript entrypoints from your app's own output and uses them to run your .Net WASM app in a Worker, SharedWorker, or ServiceWorker:
 
-Implications:
-- Your app must be a module-based .Net WASM app - i.e. your `main.js` uses `import { dotnet } from './_framework/dotnet.js'`, which is the default for a .Net WASM standalone app.
-- The `webworker-enabled` `<script>` tag mechanism from BlazorJS.WebWorkers does **not** apply here - module workers do not run the `<script>` tags from `index.html`. If a worker needs a Javascript dependency, `import` it from the worker's module or load it inside the worker.
+| Entrypoint | Kind | Used for |
+|---|---|---|
+| `main.js` | your app default (untouched) | not used directly once the app is bundler-friendly (see below) |
+| `main.classic.js` | classic (non-module) | **default** for new Worker/SharedWorker/ServiceWorker; also loadable via plain `<script src>` or `importScripts()` |
+| `main.module.js` | ES module | recommended page entrypoint; used when a module worker is explicitly requested |
 
-A classic (non-module) worker path is not currently supported.
+Both bundled entrypoints reference your app's existing `_framework` output as-is - **no assets are duplicated, only the two JS files are added** - and fold in the event-holder that captures early ServiceWorker/SharedWorker events while .Net boots.
+
+See [Docs/build-properties.md](Docs/build-properties.md) for the full list of MSBuild properties (`SpawnJSWebWorkersClassicBundle`, `SpawnJSWebWorkersFrameworkFolderName`, `SpawnJSWebWorkersContentFolderName`, …).
+
+### Requirements
+
+- **Node.js on PATH** at build and publish. The bundle is produced by an offline, self-contained Rollup toolchain that runs under Node (no `npm install`, no network).
+- **`WasmBundlerFriendlyBootConfig=true`** - set automatically by this package. The .Net WASM boot config must use static (bundler-followable) imports so the bundle can be produced from, and reference, your app's own `_framework`. Per the .Net SDK docs this output is not meant to be loaded directly by the browser, so your app boots through the bundle instead of the raw `main.js`.
+
+### Wire your index.html to the bundle
+
+Because the app boots through the bundle, point your `index.html` module script at `main.module.js`:
+
+```html
+<!-- instead of the default main.js / main#[.{fingerprint}]!.js -->
+<script type="module" src="main.module.js"></script>
+```
+
+### Opting out
+
+Set `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` to skip the bundle build. The app is then a normal (non-bundler-friendly) .Net WASM app and worker creation falls back to the legacy module worker script (`spawndev.spawnjs.webworkers.module.js`), which only works when asset fingerprinting is off.
+
+### Browser extensions - renaming `_framework`
+
+Because the classic bundle (`main.classic.js`) can be loaded via a plain `<script src>` or `importScripts()` and reuses the app's own `_framework` output, it makes a great runtime for a **browser extension** background ServiceWorker, content scripts, and other extension scopes. One obstacle: a browser extension cannot have root files or folders whose names start with `_` (a leading `.` is likewise unsafe), so the default `_framework` (and `_content`, if your app uses Razor Class Library static assets) folders are illegal at the extension root.
+
+Two **publish-only, opt-in** properties rename those folders and rewrite every reference to them in the published output (including `main.classic.js` / `main.module.js`, `index.html`, and the boot config):
+
+```xml
+<PropertyGroup>
+  <!-- rename wwwroot/_framework -> wwwroot/framework on publish -->
+  <SpawnJSWebWorkersFrameworkFolderName>framework</SpawnJSWebWorkersFrameworkFolderName>
+  <!-- only if your app has a _content folder (RCL static assets) -->
+  <SpawnJSWebWorkersContentFolderName>content</SpawnJSWebWorkersContentFolderName>
+</PropertyGroup>
+```
+
+Notes:
+- **Publish-only.** Normal builds and `dotnet run` are untouched (the folders keep their default names in dev).
+- The new name must not start with `_` or `.` (that would defeat the purpose) and must be a single folder name.
+- This is a sharp tool: it rewrites references it can see in the published `.js`/`.html`/`.json`/`.css`. If your app builds a `"_framework"`/`"_content"` path at runtime from a variable, that reference will not be rewritten. Only opt in if you understand your app's asset loading.
+- You will still typically place the app under its own subfolder (e.g. `app/`) with the extension `manifest.json` at the extension root; the rename removes the remaining underscore-prefixed paths inside the app folder.
 
 ## Example setup and usage
 

@@ -8,8 +8,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="preload" id="webassembly" />
-  <script type="importmap"></script>
-  <script type='module' src="main#[.{fingerprint}].js"></script>
+  <!-- SpawnJS.WebWorkers: the app boots through the bundled module entrypoint (main.module.js), not the raw
+       main.js. WasmBundlerFriendlyBootConfig output is not directly browser-runnable; the SpawnJS.WebWorkers
+       build produces main.module.js (module) + main.classic.js (classic worker/CDN) from the app's own output. -->
+  <script type="module" src="main.module.js"></script>
 </head>
 
 <body>

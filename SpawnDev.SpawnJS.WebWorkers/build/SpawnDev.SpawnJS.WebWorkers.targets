@@ -1,0 +1,99 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<!-- Stamp [assembly: SpawnJSWebWorkersClassicBundle(true)] into the consuming app so
+	     WebWorkerService.NonModuleScriptAvailable reads true at runtime (sync reflection, every scope)
+	     and worker creation defaults to the bundled non-module entrypoint (main.classic.js).
+	     Emitted only when not opted out; when opted out no attribute is written, so NonModuleScriptAvailable
+	     stays false -> legacy module worker path. Runs BeforeTargets=CoreCompile so the file is part of
+	     @(Compile). The value reflects intent; if the bundle task later fails the build fails, so a successful
+	     build that has the attribute always has the bundle. -->
+	<Target Name="SpawnJSWebWorkersGenerateBundleAttribute"
+			BeforeTargets="CoreCompile"
+			Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true'">
+		<PropertyGroup>
+			<_SpawnJSWebWorkersAttrFile>$(IntermediateOutputPath)SpawnJSWebWorkersClassicBundle.g.cs</_SpawnJSWebWorkersAttrFile>
+		</PropertyGroup>
+		<ItemGroup>
+			<_SpawnJSWebWorkersAttrLines Include="// &lt;auto-generated&gt; by SpawnDev.SpawnJS.WebWorkers build targets - do not edit." />
+			<_SpawnJSWebWorkersAttrLines Include="[assembly: SpawnDev.SpawnJS.WebWorkers.SpawnJSWebWorkersClassicBundle(true)]" />
+		</ItemGroup>
+		<WriteLinesToFile File="$(_SpawnJSWebWorkersAttrFile)"
+						  Lines="@(_SpawnJSWebWorkersAttrLines)"
+						  Overwrite="true"
+						  WriteOnlyWhenDifferent="true" />
+		<ItemGroup>
+			<Compile Include="$(_SpawnJSWebWorkersAttrFile)" />
+			<FileWrites Include="$(_SpawnJSWebWorkersAttrFile)" />
+		</ItemGroup>
+	</Target>
+
+	<!-- Enable gate: not opted out, and not an IDE design-time / intellisense build. -->
+	<PropertyGroup>
+		<_SpawnJSWebWorkersBundleEnabled Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(BuildingForLiveUnitTesting)' != 'true'">true</_SpawnJSWebWorkersBundleEnabled>
+	</PropertyGroup>
+
+	<!-- BUILD path (dev / F5 / dotnet run): the app is built bundler-friendly (props), so its OWN
+	     _framework/dotnet.<fp>.js is Rollup-followable. A `dotnet build` does not assemble a complete wwwroot
+	     on disk (the assets live scattered, unified only by the manifest), so we hand the task the resolved
+	     @(StaticWebAsset) list to assemble a temp wwwroot, bundle it into the two JS entrypoints, and register
+	     them as COMPUTED static web assets + endpoints so the WASM dev server serves them without a publish.
+	     Runs after the build static web assets are resolved and before the manifest is written; skipped during
+	     publish (_IsPublishing) - the publish path below handles that. -->
+	<Target Name="SpawnJSWebWorkersBuildBundle"
+			Condition="'$(_SpawnJSWebWorkersBundleEnabled)' == 'true' AND '$(_IsPublishing)' != 'true'"
+			BeforeTargets="GenerateStaticWebAssetsManifest"
+			DependsOnTargets="ResolveBuildStaticWebAssets">
+		<SpawnJSWebWorkersBundle
+			BundleFromAssets="@(StaticWebAsset)"
+			OutputDir="$(IntermediateOutputPath)spawnjs-bundle\build\out"
+			StagingDir="$(IntermediateOutputPath)spawnjs-bundle\build\stage"
+			PackageContentDir="$(_SpawnJSWebWorkersBuildContentDir)">
+			<Output TaskParameter="BundleFiles" ItemName="_SpawnJSBundleFile" />
+		</SpawnJSWebWorkersBundle>
+
+		<!-- Register the two files as computed static web assets served at the app root + matching endpoints. -->
+		<DefineStaticWebAssets
+			CandidateAssets="@(_SpawnJSBundleFile)"
+			FingerprintCandidates="false"
+			RelativePathPattern="**"
+			SourceType="Computed"
+			SourceId="$(PackageId)"
+			ContentRoot="$(IntermediateOutputPath)spawnjs-bundle\build\out"
+			BasePath="$(StaticWebAssetBasePath)">
+			<Output TaskParameter="Assets" ItemName="StaticWebAsset" />
+			<Output TaskParameter="Assets" ItemName="_SpawnJSBundleAsset" />
+		</DefineStaticWebAssets>
+
+		<DefineStaticWebAssetEndpoints
+			CandidateAssets="@(_SpawnJSBundleAsset)"
+			ExistingEndpoints="@(StaticWebAssetEndpoint)"
+			ContentTypeMappings="@(StaticWebAssetContentTypeMapping)">
+			<Output TaskParameter="Endpoints" ItemName="StaticWebAssetEndpoint" />
+		</DefineStaticWebAssetEndpoints>
+	</Target>
+
+	<!-- PUBLISH path: the publish wwwroot is complete + bundler-friendly. Bundle it in place - the two JS
+	     entrypoints land in the publish wwwroot, referencing the published _framework as-is. -->
+	<Target Name="SpawnJSWebWorkersPublishBundle"
+			AfterTargets="AfterPublish"
+			Condition="'$(_SpawnJSWebWorkersBundleEnabled)' == 'true'">
+		<SpawnJSWebWorkersBundle
+			SourceWwwroot="$(PublishDir)wwwroot"
+			OutputDir="$(PublishDir)wwwroot"
+			StagingDir="$(IntermediateOutputPath)spawnjs-bundle\publish\stage"
+			PackageContentDir="$(_SpawnJSWebWorkersBuildContentDir)" />
+	</Target>
+
+	<!-- PUBLISH-ONLY, opt-in: rename _framework (and optionally _content) so the published app can run where
+	     leading-underscore paths are illegal (browser extensions). Runs after the publish bundle so it also
+	     rewrites main.classic.js / main.module.js. No effect on normal builds/dev. -->
+	<Target Name="SpawnJSWebWorkersRenamePublishFolders"
+			AfterTargets="SpawnJSWebWorkersPublishBundle"
+			Condition="'$(SpawnJSWebWorkersFrameworkFolderName)' != '' OR '$(SpawnJSWebWorkersContentFolderName)' != ''">
+		<SpawnJSWebWorkersRenameFolders
+			WwwrootDir="$(PublishDir)wwwroot"
+			FrameworkFolderName="$(SpawnJSWebWorkersFrameworkFolderName)"
+			ContentFolderName="$(SpawnJSWebWorkersContentFolderName)" />
+	</Target>
+
+</Project>
