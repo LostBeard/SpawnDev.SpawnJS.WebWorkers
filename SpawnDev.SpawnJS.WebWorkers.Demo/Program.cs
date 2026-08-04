@@ -4,7 +4,6 @@ using SpawnDev.SpawnJS;
 using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.WebWorkers;
 using SpawnDev.SpawnJS.WebWorkers.Demo.Tests;
-using System;
 
 // .Net Wasm, unlike Blazor, does not come with a built-in dependency injection container.
 // SpawnJSApp is a very minimal DI container that can be used when not using something else.
@@ -25,6 +24,8 @@ var app = builder.Build();
 // This starts IBackgroundService and IAsyncBackgroundService services as needed based on current global scope
 await app.Services.StartBackgroundServices();
 
+Console.WriteLine($">>> {JS.GlobalScope}");
+
 // Run the test suite in the window scope only. Workers load this same Program.cs; they must serve as
 // workers, not re-run the suite. The Playwright TestRunner reads the READY/TEST/RESULTS console lines.
 // `?filter=Name` in the url scopes the run. This mirrors the SpawnJS harness.
@@ -39,10 +40,16 @@ if (JS.GlobalScope == GlobalScope.Window)
         // the created worker, then the worker will be terminated when disposed via the `using` operator
         await worker!.Run(() => Console.WriteLine($"Hello from {JS.GlobalScopeName}"));
     }
+
+    // Create a button and insert add it to body with a click handler pointed at RunIt_OnClick
     using var document = JS.GetDocument();
-    using var button = document!.QuerySelector<HTMLButtonElement>("#run_it");
+    using var button = document!.CreateElement<HTMLButtonElement>("button");
+    button.InnerText = "Run Worker";
+    using var body = document!.Body;
+    body!.Append(button);
     button!.OnClick += RunIt_OnClick;
 
+    // Test tunner
     await WebWorkerTestSuiteRunner.RunAllAsync(app.Services, WebWorkerTestSuiteRunner.FilterFromLocation());
 }
 

@@ -2,26 +2,16 @@
 <!--  Licensed to the .NET Foundation under one or more agreements. -->
 <!-- The .NET Foundation licenses this file to you under the MIT license. -->
 <html>
-
 <head>
   <title>SpawnDev.SpawnJS.WebWorkers.Demo</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="preload" id="webassembly" />
   <!-- SpawnJS.WebWorkers: the app boots through the bundled module entrypoint (main.module.js), not the raw
        main.js. WasmBundlerFriendlyBootConfig output is not directly browser-runnable; the SpawnJS.WebWorkers
        build produces main.module.js (module) + main.classic.js (classic worker/CDN) from the app's own output. -->
   <script type="module" src="main.module.js"></script>
 </head>
-
 <body>
-  <h1>Stopwatch</h1>
-  <p>
-    Time elapsed in .NET is <span id="time"><i>loading...</i></span>
-  </p>
-  <p>
-    <button id="run_it">Run</button>
-  </p>
-</body>
 
+</body>
 </html>

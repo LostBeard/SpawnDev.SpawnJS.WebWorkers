@@ -46,6 +46,8 @@ If you have ***ANY*** issues or questions please open an issue [here](https://gi
 
 ## Worker bundle
 
+> **New in 1.0.0** - workers now load a **classic or module bundle** built from your app's own output (`main.classic.js` / `main.module.js`), replacing the old module-only worker script. This is what makes the app runnable as a classic `<script>` / `importScripts()` and in browser-extension scopes. See [Docs/build-properties.md](Docs/build-properties.md) for the MSBuild properties (including the publish-only browser-extension folder rename).
+
 SpawnDev.SpawnJS.WebWorkers builds two extra JavaScript entrypoints from your app's own output and uses them to run your .Net WASM app in a Worker, SharedWorker, or ServiceWorker:
 
 | Entrypoint | Kind | Used for |
