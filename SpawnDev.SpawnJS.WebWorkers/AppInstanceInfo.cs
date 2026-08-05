@@ -11,14 +11,14 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// The instance's instanceId, a unique and randomly generated Guid string created during SpawnJSRuntime startup 
         /// </summary>
         public string InstanceId { get; set; } = default!;
-        /// <summary>
-        /// The InstanceId of the instance that created this instance (if one)
-        /// </summary>
-        public string? OwnerId { get; set; }
-        /// <summary>
-        /// The id set by the owner (OwnerId) when they created this instance
-        /// </summary>
-        public string? ChildId { get; set; }
+        ///// <summary>
+        ///// The InstanceId of the instance that created this instance (if one)
+        ///// </summary>
+        //public string? OwnerId { get; set; }
+        ///// <summary>
+        ///// The id set by the owner (OwnerId) when they created this instance
+        ///// </summary>
+        //public string? ChildId { get; set; }
         /// <summary>
         /// The instance's location at startup
         /// </summary>
@@ -52,13 +52,13 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? LockName { get; set; }
-        /// <summary>
-        /// Returns true if this instance is a TaskPool worker
-        /// </summary>
-        public bool TaskPoolWorker { get; set; }
-        /// <summary>
-        /// Returns true if this instance is an IFrame worker
-        /// </summary>
-        public bool IFrameWorker { get; set; }
+        ///// <summary>
+        ///// Returns true if this instance is a TaskPool worker
+        ///// </summary>
+        //public bool TaskPoolWorker { get; set; }
+        ///// <summary>
+        ///// Returns true if this instance is an IFrame worker
+        ///// </summary>
+        //public bool IFrameWorker { get; set; }
     }
 }

@@ -26,8 +26,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             var info = new AppInstanceInfo
             {
                 InstanceId = Guid.NewGuid().ToString(),
-                OwnerId = Guid.NewGuid().ToString(),
-                ChildId = "child-7",
+                //OwnerId = Guid.NewGuid().ToString(),
+                //ChildId = "child-7",
                 Url = "https://example.test/app/",
                 BaseUrl = "https://example.test/",
                 Scope = GlobalScope.DedicatedWorker,
@@ -35,8 +35,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
                 ParentInstanceId = Guid.NewGuid().ToString(),
                 ClientId = Guid.NewGuid().ToString(),
                 LockName = null,
-                TaskPoolWorker = true,
-                IFrameWorker = false,
+                //TaskPoolWorker = true,
+                //IFrameWorker = false,
             };
 
             // this is the operation at WebWorkerService.RegisterInstance that threw under trimming
@@ -47,16 +47,16 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             if (back == null) throw new Exception("Deserialize returned null");
 
             if (back.InstanceId != info.InstanceId) throw new Exception($"InstanceId mismatch: '{back.InstanceId}' != '{info.InstanceId}'");
-            if (back.OwnerId != info.OwnerId) throw new Exception("OwnerId mismatch");
-            if (back.ChildId != info.ChildId) throw new Exception("ChildId mismatch");
+            //if (back.OwnerId != info.OwnerId) throw new Exception("OwnerId mismatch");
+            //if (back.ChildId != info.ChildId) throw new Exception("ChildId mismatch");
             if (back.Url != info.Url) throw new Exception("Url mismatch");
             if (back.BaseUrl != info.BaseUrl) throw new Exception("BaseUrl mismatch");
             if (back.Scope != info.Scope) throw new Exception($"Scope mismatch: {back.Scope} != {info.Scope}");
             if (back.Name != info.Name) throw new Exception("Name mismatch");
             if (back.ParentInstanceId != info.ParentInstanceId) throw new Exception("ParentInstanceId mismatch");
             if (back.ClientId != info.ClientId) throw new Exception("ClientId mismatch");
-            if (back.TaskPoolWorker != info.TaskPoolWorker) throw new Exception("TaskPoolWorker mismatch");
-            if (back.IFrameWorker != info.IFrameWorker) throw new Exception("IFrameWorker mismatch");
+            //if (back.TaskPoolWorker != info.TaskPoolWorker) throw new Exception("TaskPoolWorker mismatch");
+            //if (back.IFrameWorker != info.IFrameWorker) throw new Exception("IFrameWorker mismatch");
         }
 
         /// <summary>
@@ -80,7 +80,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
 
             var back = JsonSerializer.Deserialize(json, WebWorkersJsonContext.Default.AppInstanceInfo)!;
             if (back.Name != null) throw new Exception("Name should read back as null");
-            if (back.OwnerId != null) throw new Exception("OwnerId should read back as null");
+            //if (back.OwnerId != null) throw new Exception("OwnerId should read back as null");
         }
 
         /// <summary>

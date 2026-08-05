@@ -9,7 +9,7 @@
   <!-- SpawnJS.WebWorkers: the app boots through the bundled module entrypoint (main.module.js), not the raw
        main.js. WasmBundlerFriendlyBootConfig output is not directly browser-runnable; the SpawnJS.WebWorkers
        build produces main.module.js (module) + main.classic.js (classic worker/CDN) from the app's own output. -->
-  <script type="module" src="main.module.js"></script>
+  <script src="main.classic.js"></script>
 </head>
 <body>
 

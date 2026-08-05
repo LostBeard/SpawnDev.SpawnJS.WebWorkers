@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SpawnDev.SpawnJS.JSObjects;
-using System.Diagnostics.CodeAnalysis;
+using SpawnDev.SpawnJS.Toolbox;
 using System.Reflection;
 using System.Text.Json;
 using System.Web;
@@ -75,6 +75,10 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public string AppBaseUri { get; } = "";
         /// <summary>
+        /// The baseUri of this Blazor app
+        /// </summary>
+        public string LocationHref { get; } = "";
+        /// <summary>
         /// Returns true if this service has been initialized
         /// </summary>
         public bool BeenInit { get; private set; }
@@ -135,12 +139,6 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public ServiceWorkerConfig ServiceWorkerConfig { get; private set; } = new ServiceWorkerConfig { Register = ServiceWorkerStartupRegistration.None };
         /// <summary>
-        /// The HTML file that will be loaded by new WebWorker and SharedWebWorker instances<br/>
-        /// to determine what Javascript &lt;script&gt; tags to load in the worker scope.<br/>
-        /// If empty, the default will be used "./"<br/>
-        /// </summary>
-        public string WorkerIndexHtml { get; set; } = "";
-        /// <summary>
         /// AppInstanceInfo for this app instance
         /// </summary>
         public AppInstanceInfo Info { get; } = default!;
@@ -162,8 +160,10 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// IBackgroundServiceManager singleton
         /// </summary>
         public IBackgroundServiceManager WebAssemblyServices { get; init; }
-
-        //NavigationManager NavigationManager;
+        /// <summary>
+        /// Returns true if this app's AppBaseUri origin does not match the scope's location.href
+        /// </summary>
+        public bool CrossOriginLoaded { get; private set; }
         /// <summary>
         /// Creates a new instance of WebWorkerService
         /// </summary>
@@ -186,27 +186,27 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 // document.baseURI is deliberately NOT used: it is the host PAGE's base, not the app's, so
                 // it silently resolved every worker script to the page root under a CDN load.
                 AppBaseUri = JS.AppBaseUri;
-                var locationHref = JS.Get<string>("location.href");
-                var locationUri = new Uri(locationHref);
-                if (string.IsNullOrEmpty(AppBaseUri))
+                LocationHref = JS.Get<string>("location?.href") ?? "";
+                var locationUri = string.IsNullOrEmpty(LocationHref) ? null : new Uri(LocationHref);
+                if (string.IsNullOrEmpty(AppBaseUri) && locationUri != null)
                 {
                     // Last resort only (runtime could not determine its origin): the scope's own location
                     // path. In a worker this is the worker script's folder; in a window it is the page path.
                     var path = locationUri.GetLeftPart(UriPartial.Path);
                     AppBaseUri = path.Substring(0, path.LastIndexOf("/") + 1);
                 }
+                CrossOriginLoaded = !SameOriginCheck(LocationHref, AppBaseUri);
                 WebWorkerModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerModuleJSScript).ToString();
                 WebWorkerClassicJSScript = new Uri(new Uri(AppBaseUri), WebWorkerClassicJSScript).ToString();
                 WebWorkerBundledModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerBundledModuleJSScript).ToString();
                 // The bundle build stamps [assembly: SpawnJSWebWorkersClassicBundle(true)] into the app when it
                 // produced the bundled entrypoints (main.classic.js / main.module.js). Read it once here (sync
                 // reflection, works in every scope, no DOM/fetch); absent -> fall back to the legacy module path.
-                NonModuleScriptAvailable = System.Reflection.Assembly.GetEntryAssembly()?
-                    .GetCustomAttribute<SpawnJSWebWorkersClassicBundleAttribute>()?.Available ?? false;
-                Locks = JS.Get<LockManager>("navigator.locks");
+                NonModuleScriptAvailable = Assembly.GetEntryAssembly()?.GetCustomAttribute<SpawnJSWebWorkersClassicBundleAttribute>()?.Available ?? false;
+                Locks = JS.Get<LockManager>("navigator?.locks");
                 LockManagerSupported = Locks != null;
-                var queryParams = HttpUtility.ParseQueryString(locationUri.Query);
-                var isTaskPoolWorker = queryParams["taskPool"] == "1" && js.IsDedicatedWorkerGlobalScope;
+                var queryParams = HttpUtility.ParseQueryString(locationUri?.Query ?? "");
+                var isTaskPoolWorker = queryParams["taskPool"] == "1" && JS.IsDedicatedWorkerGlobalScope;
                 Info = new AppInstanceInfo
                 {
                     //ParentInstanceId = instanceOwnerId,
@@ -216,8 +216,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     Scope = GlobalScope,
                     Name = GetName(),
                     BaseUrl = AppBaseUri,
-                    Url = locationHref,
-                    TaskPoolWorker = isTaskPoolWorker,
+                    Url = LocationHref,
+                    //TaskPoolWorker = isTaskPoolWorker,
                 };
                 //if (js.IsWindow)
                 //{
@@ -267,6 +267,22 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     TaskPool = new WebWorkerPool(this, 0, 1, true);
                 }
             }
+        }
+        bool SameOriginCheck(string pageHref, string wasmBaseUri)
+        {
+            if (string.IsNullOrEmpty(pageHref) || string.IsNullOrEmpty(wasmBaseUri)) return pageHref == wasmBaseUri;
+            Uri pageUri = new Uri(pageHref);
+            Uri baseUri = new Uri(wasmBaseUri);
+            // Compare Scheme, Host, and Port simultaneously
+            int result = Uri.Compare(
+                pageUri,
+                baseUri,
+                UriComponents.Scheme | UriComponents.Host | UriComponents.Port,
+                UriFormat.Unescaped,
+                StringComparison.OrdinalIgnoreCase
+            );
+            // If result is 0, they are the same origin. 
+            return result == 0;
         }
         BroadcastChannel? InstanceBroadcastChannel = null;
         private void EnableInterconnectWorker()
@@ -537,15 +553,15 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     // if needed, can test with old version of Safari on macOS as they do not support locks
                 }
             }
-            if (instance.Info.OwnerId == InstanceId && !string.IsNullOrEmpty(instance.Info.ChildId))
-            {
-                // this instance created 'instance'
-                if (OpenWindowWaiters.TryGetValue(instance.Info.ChildId, out var openWindowWaiters))
-                {
-                    OpenWindowWaiters.Remove(instance.Info.ChildId);
-                    openWindowWaiters(instance);
-                }
-            }
+            //if (instance.Info.OwnerId == InstanceId && !string.IsNullOrEmpty(instance.Info.ChildId))
+            //{
+            //    // this instance created 'instance'
+            //    if (OpenWindowWaiters.TryGetValue(instance.Info.ChildId, out var openWindowWaiters))
+            //    {
+            //        OpenWindowWaiters.Remove(instance.Info.ChildId);
+            //        openWindowWaiters(instance);
+            //    }
+            //}
             OnInstanceFound?.Invoke(instance);
             if (fireChangedEvent) OnInstancesChanged?.Invoke();
             return true;
@@ -632,20 +648,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
                             await UnregisterServiceWorker();
                             break;
                     }
-                    if (!string.IsNullOrEmpty(Info.OwnerId) && !string.IsNullOrEmpty(Info.ChildId))
-                    {
-                        // this window is owned by another instance
-                        // todo I guess nothing really, it knows when this winow is started and is ready
-                        // could load Info.Url if it is set
-
-                        JS.Log($"--- window", Info);
-                    }
                 }
                 else if (JS.GlobalThis is DedicatedWorkerGlobalScope workerGlobalScope)
                 {
                     DedicatedWorkerParent = new ServiceCallDispatcher(WebAssemblyServices, workerGlobalScope);
                     DedicatedWorkerParent.SendReadyFlag();
-                    new Action(async () =>
+                    Async.Run(async () =>
                     {
                         await DedicatedWorkerParent.WhenReady;
                         var isParentAWindow = DedicatedWorkerParent.RemoteInfo!.GlobalThisTypeName == "Window";
@@ -656,7 +664,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                         OnDedicatedWorkerParentReady?.Invoke();
                         Info.ParentInstanceId = DedicatedWorkerParent.RemoteInfo.InstanceId;
                         await RegisterInstance();
-                    })();
+                    });
                     return;
                 }
                 else if (JS.GlobalThis is SharedWorkerGlobalScope sharedWorkerGlobalScope)
@@ -681,7 +689,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     // 
                     // Check if a ServiceWorkerEventHandler is registered and if not run a the default one to release the events
                     var serviceWorkerEventHandler = ServiceProvider.GetService<ServiceWorkerEventHandler>();
-                    if(serviceWorkerEventHandler == null)
+                    if (serviceWorkerEventHandler == null)
                     {
                         _defaultServiceWorkerEventHandler = (ServiceWorkerEventHandler)ActivatorUtilities.CreateInstance(ServiceProvider, typeof(ServiceWorkerEventHandler));
                         _ = _defaultServiceWorkerEventHandler.Ready;
@@ -897,16 +905,57 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         /// <param name="preferModule">True to request the module entrypoint (e.g. WorkerOptions.Type == "module").</param>
         /// <returns>The resolved script URL and whether it must be loaded as a module worker.</returns>
-        private (string ScriptUrl, bool IsModule) ResolveWorkerEntry(bool preferModule = false)
+        private (string ScriptUrl, bool IsModule) _ResolveWorkerEntry(bool preferModule = false)
         {
             if (NonModuleScriptAvailable)
             {
-                return preferModule
-                    ? (WebWorkerBundledModuleJSScript, true)
-                    : (WebWorkerClassicJSScript, false);
+                return preferModule ? (WebWorkerBundledModuleJSScript, true) : (WebWorkerClassicJSScript, false);
             }
             return (WebWorkerModuleJSScript, true);
         }
+        /// <summary>
+        /// If true, all workers will be wrapped using Blob object Urls<br/>
+        /// By default, only cross origin workers are wrapped using Blob
+        /// </summary>
+        public bool ForceBlobWorkers { get; set; }
+        private (string ScriptUrl, bool IsModule) ResolveWorkerEntry(bool preferModule = false)
+        {
+            var ret = _ResolveWorkerEntry(preferModule);
+            var requiresBlob = !SameOriginCheck(ret.ScriptUrl, LocationHref);
+            var useBlob = requiresBlob || ForceBlobWorkers;
+            var isBlob = ret.ScriptUrl.StartsWith("blob:");
+            if (isBlob || !useBlob) return ret;
+            if (!_blobWrappers.TryGetValue(ret.ScriptUrl, out var blobUrl))
+            {
+                if (ret.IsModule)
+                {
+                    // should not have to fix the location.href with module loading as they get the correct path from import.meta.url
+                    var bridgeCode = $"import * as RemoteModule from '{ret.ScriptUrl}';";
+                    using var blob = new Blob([bridgeCode], new BlobOptions { Type = "application/javascript" });
+                    blobUrl = URL.CreateObjectURL(blob);
+                    _blobWrappers[ret.ScriptUrl] = blobUrl;
+                }
+                else
+                {
+                    // before loading the remote script patch location.href so the script can resolve its own co-located assets
+                    var bridgeCode = $@"
+Object.defineProperty(location, 'href', {{
+  value: '{ret.ScriptUrl}',
+  writable: false,
+  enumerable: false,
+  configurable: false
+}});
+importScripts('{ret.ScriptUrl}');
+";
+                    using var blob = new Blob([bridgeCode], new BlobOptions { Type = "application/javascript" });
+                    blobUrl = URL.CreateObjectURL(blob);
+                    _blobWrappers[ret.ScriptUrl] = blobUrl;
+                }
+            }
+            return (blobUrl, ret.IsModule);
+        }
+
+        Dictionary<string, string> _blobWrappers = new Dictionary<string, string>();
 
         /// <summary>
         /// Creates a new a WebWorker instance and returns it when it when it is ready for use.
@@ -915,19 +964,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public async Task<WebWorker?> GetWebWorker()
         {
             if (!WebWorkerSupported) return null;
-            var queryParams = new Dictionary<string, string>();
-#if DEBUG && false
-            queryParams["forceCompatMode"] = "0";
-#endif
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                queryParams["indexHtml"] = WorkerIndexHtml;
-            }
             var (scriptUrl, isModule) = ResolveWorkerEntry();
-            if (queryParams.Count > 0)
-            {
-                scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
-            }
             var worker = new Worker(scriptUrl, new WorkerOptions { Type = isModule ? "module" : null });
             var webWorker = new WebWorker(worker, WebAssemblyServices);
             await webWorker.WhenReady;
@@ -940,22 +977,10 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// Use Expressions, interface proxies, etc. to make calls into the worker.
         /// </summary>
         /// <returns>WebWorker or null if not supported.</returns>
-        public WebWorker? GetWebWorkerSync(Dictionary<string, string>? queryParams = null)
+        public WebWorker? GetWebWorkerSync()
         {
             if (!WebWorkerSupported) return null;
-            queryParams ??= new Dictionary<string, string>();
-#if DEBUG
-            queryParams["forceCompatMode"] = "0";
-#endif
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                queryParams["indexHtml"] = WorkerIndexHtml;
-            }
             var (scriptUrl, isModule) = ResolveWorkerEntry();
-            if (queryParams.Count > 0)
-            {
-                scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
-            }
             var worker = new Worker(scriptUrl, new WorkerOptions { Type = isModule ? "module" : null });
             var webWorker = new WebWorker(worker, WebAssemblyServices);
             return webWorker;
@@ -985,20 +1010,11 @@ namespace SpawnDev.SpawnJS.WebWorkers
             if (!WebWorkerSupported) return null;
             webWorkerOptions ??= new WebWorkerOptions();
             webWorkerOptions.WorkerOptions ??= new WorkerOptions();
-            webWorkerOptions.QueryParams ??= new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                webWorkerOptions.QueryParams["indexHtml"] = WorkerIndexHtml;
-            }
             if (string.IsNullOrEmpty(webWorkerOptions.ScriptUrl))
             {
                 var (url, isModule) = ResolveWorkerEntry(webWorkerOptions.WorkerOptions.Type == "module");
                 webWorkerOptions.ScriptUrl = url;
                 webWorkerOptions.WorkerOptions.Type = isModule ? "module" : null;
-            }
-            if (webWorkerOptions.QueryParams.Count > 0)
-            {
-                webWorkerOptions.ScriptUrl += "?" + string.Join('&', webWorkerOptions.QueryParams.Select(o => $"{o.Key}={o.Value}"));
             }
             var worker = new Worker(webWorkerOptions.ScriptUrl, webWorkerOptions.WorkerOptions);
             var webWorker = new WebWorker(worker, WebAssemblyServices);
@@ -1027,20 +1043,11 @@ namespace SpawnDev.SpawnJS.WebWorkers
             if (!WebWorkerSupported) return null;
             webWorkerOptions ??= new SharedWebWorkerOptions();
             webWorkerOptions.WorkerOptions ??= new SharedWorkerOptions();
-            var queryParams = new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                queryParams["indexHtml"] = WorkerIndexHtml;
-            }
             if (string.IsNullOrEmpty(webWorkerOptions.ScriptUrl))
             {
                 var (url, isModule) = ResolveWorkerEntry(webWorkerOptions.WorkerOptions.Type == "module");
                 webWorkerOptions.ScriptUrl = url;
                 webWorkerOptions.WorkerOptions.Type = isModule ? "module" : null;
-            }
-            if (queryParams.Count > 0)
-            {
-                webWorkerOptions.ScriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
             }
             webWorkerOptions.WorkerOptions.Name ??= "";
             var worker = new SharedWorker(webWorkerOptions.ScriptUrl, webWorkerOptions.WorkerOptions);
@@ -1056,16 +1063,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public async Task<SharedWebWorker?> GetSharedWebWorker(string sharedWorkerName = "")
         {
             if (!SharedWebWorkerSupported) return null;
-            var queryParams = new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                queryParams["indexHtml"] = WorkerIndexHtml;
-            }
             var (scriptUrl, isModule) = ResolveWorkerEntry();
-            if (queryParams.Count > 0)
-            {
-                scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
-            }
             var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = isModule ? "module" : null });
             var sharedWebWorker = new SharedWebWorker(sharedWorkerName, sharedWorker, WebAssemblyServices);
             await sharedWebWorker.WhenReady;
@@ -1080,16 +1078,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public SharedWebWorker? GetSharedWebWorkerSync(string sharedWorkerName = "")
         {
             if (!SharedWebWorkerSupported) return null;
-            var queryParams = new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(WorkerIndexHtml))
-            {
-                queryParams["indexHtml"] = WorkerIndexHtml;
-            }
             var (scriptUrl, isModule) = ResolveWorkerEntry();
-            if (queryParams.Count > 0)
-            {
-                scriptUrl += "?" + string.Join('&', queryParams.Select(o => $"{o.Key}={o.Value}"));
-            }
             var sharedWorker = new SharedWorker(scriptUrl, new SharedWorkerOptions { Name = sharedWorkerName, Type = isModule ? "module" : null });
             var sharedWebWorker = new SharedWebWorker(sharedWorkerName, sharedWorker, WebAssemblyServices);
             return sharedWebWorker;

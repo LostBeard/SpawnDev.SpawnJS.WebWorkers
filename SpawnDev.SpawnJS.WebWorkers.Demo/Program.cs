@@ -13,6 +13,9 @@ var builder = SpawnJSAppBuilder.CreateDefault(args);
 // register SpawnJSRuntime
 builder.Services.AddSpawnJSRuntime(out var JS);
 
+// Verbose enabled debug messages including the marshaller names used for marshalled types
+// JS.Verbose = false;
+
 Console.WriteLine($"SpawnJS app: {AppDomain.CurrentDomain.FriendlyName} {JS.GlobalScopeName} {JS.AppBaseUri}");
 
 // register WebWorkerService
@@ -35,12 +38,19 @@ await builder.Build().SpawnJSRunAsync(async (app) =>
     {
         async void RunIt_OnClick()
         {
+            // below tests the HTTPClient wit hthe JS.AppBaseUri base address by readign some data that ships with the app
             var httpClient = app.Services.GetRequiredService<HttpClient>();
             var someData = await httpClient.GetFromJsonAsync<string[]>("some-data.json");
             JS.Log("someData", someData);
 
             // for testing get the WebWorkerService
             var webWorkerService = app.Services.GetRequiredService<WebWorkerService>();
+
+            // below will switcxh Blob worker loadign from auto to forced (for testing)
+            // Blob workers are used when loaded from a CDN (cross origin loaded)
+            //webWorkerService.ForceBlobWorkers = true;
+
+            // get a new dedicated worker that is destroyed when disposed
             using var worker = await webWorkerService.GetWebWorker();
             // the below line will print "Hello from Window" to the console from inside
             // the created worker, then the worker will be terminated when disposed via the `using` operator

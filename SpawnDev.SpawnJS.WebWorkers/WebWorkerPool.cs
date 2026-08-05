@@ -367,7 +367,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         async Task AddWorker()
         {
             if (IsDisposed || _workers.Count >= _PoolSize) return;
-            var worker = WebWorkerService.GetWebWorkerSync(new Dictionary<string, string> { { "taskPool", "1" } });
+            var worker = WebWorkerService.GetWebWorkerSync();
             if (worker == null) return;
             _workers.Add(worker);
             await worker.WhenReady;

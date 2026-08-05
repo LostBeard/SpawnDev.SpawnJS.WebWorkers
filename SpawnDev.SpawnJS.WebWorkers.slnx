@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+  </Folder>
   <Project Path="SpawnDev.SpawnJS.WebWorkers.Build/SpawnDev.SpawnJS.WebWorkers.Build.csproj" />
   <Project Path="SpawnDev.SpawnJS.WebWorkers.Demo/SpawnDev.SpawnJS.WebWorkers.Demo.csproj" />
   <Project Path="SpawnDev.SpawnJS.WebWorkers/SpawnDev.SpawnJS.WebWorkers.csproj">
