@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+﻿<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
 
 	<!-- SpawnDev.SpawnJS.WebWorkers build integration.
 	     Debug consumes the library via ProjectReference (dev inner loop). A ProjectReference does NOT
@@ -24,7 +24,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="1.0.0" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="1.0.1" />
 	</ItemGroup>
 
 	<ItemGroup>

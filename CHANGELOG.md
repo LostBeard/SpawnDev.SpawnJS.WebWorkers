@@ -2,6 +2,14 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 1.0.1
+
+- **CDN-correct worker script URLs.** `WebWorkerService` now resolves worker entrypoints against
+  `SpawnJSRuntime.AppBaseUri` (the app's own load origin) instead of `document.baseURI` (the host page's
+  base). Under a CDN load - where the app is served from a different path than the host page - worker
+  scripts (`main.classic.js` / `main.module.js` / `_framework/*`) previously resolved to the page root and
+  failed to load; they now resolve to the app origin correctly. Requires `SpawnDev.SpawnJS >= 1.1.4`.
+
 ## 1.0.0
 
 First stable release.

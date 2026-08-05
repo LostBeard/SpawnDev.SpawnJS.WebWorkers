@@ -180,11 +180,18 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 WebWorkerSupported = !JS.IsUndefined("Worker");
                 SharedWebWorkerSupported = !JS.IsUndefined("SharedWorker");
                 ServiceWorkerSupported = !JS.IsUndefined("ServiceWorkerRegistration");
-                AppBaseUri = JS.Get<string?>("document?.baseURI") ?? JS.Get<string>("documentBaseURI");
+                // The app's OWN load origin, from SpawnJS (learned per-app from this runtime's dotnet
+                // instance). This is what worker entry scripts must resolve against and it stays correct
+                // when the app is served from a CDN at a different path than the host page.
+                // document.baseURI is deliberately NOT used: it is the host PAGE's base, not the app's, so
+                // it silently resolved every worker script to the page root under a CDN load.
+                AppBaseUri = JS.AppBaseUri;
                 var locationHref = JS.Get<string>("location.href");
                 var locationUri = new Uri(locationHref);
-                if (AppBaseUri == null)
+                if (string.IsNullOrEmpty(AppBaseUri))
                 {
+                    // Last resort only (runtime could not determine its origin): the scope's own location
+                    // path. In a worker this is the worker script's folder; in a window it is the page path.
                     var path = locationUri.GetLeftPart(UriPartial.Path);
                     AppBaseUri = path.Substring(0, path.LastIndexOf("/") + 1);
                 }
