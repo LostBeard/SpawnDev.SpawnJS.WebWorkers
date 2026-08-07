@@ -23,7 +23,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="1.0.2" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="1.0.5" />
 	</ItemGroup>
 
 	<ItemGroup>
