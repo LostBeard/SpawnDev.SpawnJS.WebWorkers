@@ -2,6 +2,16 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 1.0.6
+
+- **Classic/module bundle now only runs for applications, not class libraries.** The bundle enable gate
+  additionally requires `OutputType == Exe`. A WASM/Blazor app (which has an entrypoint and a `_framework`
+  runtime) is `Exe`; a Razor class library is `Library` and has neither. Previously an RCL that merely
+  referenced this package would attempt the rollup during its own build and fail with
+  `_framework not found under ...spawnjs-bundle\build\stage\wwwroot`. RCLs now skip the bundle automatically -
+  no per-library `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` opt-out required
+  (the flag still works as an explicit override). No effect on WASM/Blazor app builds.
+
 ## 1.0.1
 
 - **CDN-correct worker script URLs.** `WebWorkerService` now resolves worker entrypoints against

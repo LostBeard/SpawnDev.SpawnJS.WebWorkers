@@ -9,7 +9,7 @@
 	     build that has the attribute always has the bundle. -->
 	<Target Name="SpawnJSWebWorkersGenerateBundleAttribute"
 			BeforeTargets="CoreCompile"
-			Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true'">
+			Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(OutputType)' == 'Exe'">
 		<PropertyGroup>
 			<_SpawnJSWebWorkersAttrFile>$(IntermediateOutputPath)SpawnJSWebWorkersClassicBundle.g.cs</_SpawnJSWebWorkersAttrFile>
 		</PropertyGroup>
@@ -27,9 +27,12 @@
 		</ItemGroup>
 	</Target>
 
-	<!-- Enable gate: not opted out, and not an IDE design-time / intellisense build. -->
+	<!-- Enable gate: opted in, an application (OutputType=Exe - a WASM/Blazor app has an entrypoint and a
+	     _framework runtime; a Razor CLASS LIBRARY is OutputType=Library and has neither, so it must NOT bundle),
+	     and not an IDE design-time / intellisense build. This makes RCLs that merely reference WebWorkers skip
+	     the rollup automatically - no per-library opt-out flag required. -->
 	<PropertyGroup>
-		<_SpawnJSWebWorkersBundleEnabled Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(BuildingForLiveUnitTesting)' != 'true'">true</_SpawnJSWebWorkersBundleEnabled>
+		<_SpawnJSWebWorkersBundleEnabled Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(OutputType)' == 'Exe' AND '$(DesignTimeBuild)' != 'true' AND '$(BuildingForLiveUnitTesting)' != 'true'">true</_SpawnJSWebWorkersBundleEnabled>
 	</PropertyGroup>
 
 	<!-- BUILD path (dev / F5 / dotnet run): the app is built bundler-friendly (props), so its OWN
