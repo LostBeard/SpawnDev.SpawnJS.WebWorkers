@@ -5,8 +5,7 @@
 	     auto-import the package's build/ props+targets, and the classic/module bundle build is required
 	     even in dev (workers load main.classic.js), so import them explicitly for Debug. Release consumes
 	     the published package, whose build/ props+targets NuGet auto-imports. -->
-	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.props"
-			Condition=" '$(Configuration)' == 'Debug' " />
+	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.props" Condition=" '$(Configuration)' == 'Debug' " />
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -31,6 +30,5 @@
 		<StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
 	</ItemGroup>
 
-	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets"
-			Condition=" '$(Configuration)' == 'Debug' " />
+	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets" Condition=" '$(Configuration)' == 'Debug' " />
 </Project>

@@ -8,10 +8,7 @@ using System.Net.Http.Json;
 
 // .Net Wasm, unlike Blazor, does not come with a built-in dependency injection container.
 // SpawnJSApp is a very minimal DI container that can be used when not using something else.
-var builder = SpawnJSAppBuilder.CreateDefault(args);
-
-// register SpawnJSRuntime
-builder.Services.AddSpawnJSRuntime(out var JS);
+var builder = SpawnJSAppBuilder.CreateDefault(args, out var JS);
 
 // Verbose enabled debug messages including the marshaller names used for marshalled types
 // JS.Verbose = false;
@@ -29,7 +26,7 @@ builder.Services.AddSingleton<IMathsService, MathsService>();
 
 // SpawnJSRunAsync autostarts IBackgroundService and IAsyncBackgroundService services
 // and can take a method that runs after all auto-starting services are started
-await builder.Build().SpawnJSRunAsync(async (app) =>
+await builder.Build().RunAsync(async (app) =>
 {
     // Run the test suite in the window scope only. Workers load this same Program.cs; they must serve as
     // workers, not re-run the suite. The Playwright TestRunner reads the READY/TEST/RESULTS console lines.
