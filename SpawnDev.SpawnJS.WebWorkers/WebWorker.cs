@@ -10,7 +10,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public static bool Supported;
         static WebWorker()
         {
-            Supported = JS!.Exists("Worker");
+            Supported = JS!.Has("Worker");
         }
         Worker _worker;
         public WebWorker(Worker worker, IBackgroundServiceManager webAssemblyServices) : base(webAssemblyServices, worker)

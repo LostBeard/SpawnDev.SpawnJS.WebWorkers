@@ -177,9 +177,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             ServiceDescriptors = WebAssemblyServices.Descriptors;
             if (JS.IsBrowser)
             {
-                WebWorkerSupported = JS!.Exists("Worker");
-                SharedWebWorkerSupported = JS!.Exists("SharedWorker");
-                ServiceWorkerSupported = JS!.Exists("ServiceWorkerRegistration");
+                WebWorkerSupported = JS!.Has("Worker");
+                SharedWebWorkerSupported = JS!.Has("SharedWorker");
+                ServiceWorkerSupported = JS!.Has("ServiceWorkerRegistration");
                 // The app's OWN load origin, from SpawnJS (learned per-app from this runtime's dotnet
                 // instance). This is what worker entry scripts must resolve against and it stays correct
                 // when the app is served from a CDN at a different path than the host page.
@@ -227,7 +227,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 //        Info.IFrameWorker = !string.IsNullOrWhiteSpace(instanceOwnerId);
                 //    }
                 //}
-                BroadcastChannelSupported = JS!.Exists(nameof(BroadcastChannel));
+                BroadcastChannelSupported = JS!.Has(nameof(BroadcastChannel));
                 if (BroadcastChannelSupported)
                 {
                     // this is the BroadcastChannel all instances will send their instance info on at startup

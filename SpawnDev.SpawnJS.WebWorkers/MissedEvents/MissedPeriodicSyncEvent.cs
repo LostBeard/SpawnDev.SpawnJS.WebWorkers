@@ -12,7 +12,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         ///<inheritdoc/>
         public void WaitReject() => JSRef!.CallVoid("waitReject");
         ///<inheritdoc/>
-        public bool IsExtended => JSRef!.Exists("waitResolve");
+        public bool IsExtended => JSRef!.Has("waitResolve");
     }
 }
 
