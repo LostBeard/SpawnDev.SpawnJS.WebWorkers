@@ -30,7 +30,13 @@
 		<_SpawnJSWebWorkersBuildContentDir Condition="'$(_SpawnJSWebWorkersBuildContentDir)' == ''">$(MSBuildThisFileDirectory)..\buildcontent</_SpawnJSWebWorkersBuildContentDir>
 	</PropertyGroup>
 
-	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersBundle" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" />
-	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersRenameFolders" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" />
+	<!-- TaskHostFactory runs each task in a short-lived, out-of-process MSBuild task host that exits when
+	     the build finishes, so the persistent VS/MSBuild build node never keeps a long-lived lock on the
+	     task DLL. Without this, the node loads tasks\...\SpawnDev.SpawnJS.WebWorkers.Build.dll and holds it
+	     open (node reuse), so the NEXT build of the inner .Build project cannot overwrite that copy and
+	     fails with MSB3021 "being used by another process". All task inputs/outputs here are string / bool /
+	     ITaskItem[], which MSBuild marshals across the task-host process boundary, so out-of-proc is safe. -->
+	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersBundle" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" TaskFactory="TaskHostFactory" />
+	<UsingTask TaskName="SpawnDev.SpawnJS.WebWorkers.Build.Tasks.SpawnJSWebWorkersRenameFolders" AssemblyFile="$(_SpawnJSWebWorkersBuildTasksAssembly)" TaskFactory="TaskHostFactory" />
 
 </Project>
