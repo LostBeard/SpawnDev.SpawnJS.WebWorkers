@@ -1,5 +1,4 @@
-﻿using Microsoft.JSInterop;
-using SpawnDev.SpawnJS.JSObjects;
+﻿using SpawnDev.SpawnJS.JSObjects;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
@@ -15,7 +14,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         ///<inheritdoc/>
         public void WaitReject() => JSRef!.CallVoid("waitReject");
         ///<inheritdoc/>
-        public bool IsExtended => !JSRef!.IsUndefined("waitResolve");
+        public bool IsExtended => JSRef!.Exists("waitResolve");
     }
 }
 

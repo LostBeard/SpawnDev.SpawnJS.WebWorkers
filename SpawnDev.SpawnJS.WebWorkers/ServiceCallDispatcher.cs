@@ -1,10 +1,11 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SpawnDev.SpawnJS.JSObjects;
+using SpawnDev.SpawnJS.Marshaller;
 using SpawnDev.SpawnJS.Marshallers;
 using System.Reflection;
 using System.Security.Cryptography;
 using Array = SpawnDev.SpawnJS.JSObjects.Array;
-using TypeExtensions = SpawnDev.SpawnJS.Marshallers.TypeExtensions;
+using TypeExtensions = SpawnDev.SpawnJS.Marshaller.TypeExtensions;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
@@ -1004,7 +1005,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public override async Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key)
         {
             var keyType = key?.GetType();
-            using var jsKey = key == null ? null : JS.ReturnMe<SpawnJSObject>(key);
+            using var jsKey = key == null ? null : JS.ReturnAs<object, SpawnJSObject>(key);
             var added = await Run(() => _AddKeyedService(serviceType, implementationType, keyType!, jsKey));
             return added;
         }
@@ -1109,7 +1110,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         }
         private bool _KeyedServiceExists(Type serviceType, Type? keyType, SpawnJSObject? jsKey)
         {
-            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var serviceKey = keyType == null ? null : JS.ReturnAs(keyType, jsKey);
             var serviceDescriptor = ServiceDescriptors.FindKeyedServiceDescriptor(serviceType, serviceKey!, true);
             if (serviceDescriptor != null) return true;
             var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
@@ -1132,7 +1133,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
             }
             else
             {
-                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                using var jsKey = serviceKey == null ? null : JS.ReturnAs<object, SpawnJSObject>(serviceKey);
                 var keyType = serviceKey?.GetType();
                 var exists = await Run(() => _KeyedServiceExists(serviceType, keyType, jsKey));
                 return exists;
@@ -1140,7 +1141,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         }
         private bool _RemoveKeyedService(Type serviceType, Type? keyType, SpawnJSObject? jsKey)
         {
-            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var serviceKey = keyType == null ? null : JS.ReturnAs(keyType, jsKey);
             var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed && Object.Equals(o.ServiceKey, serviceKey));
             if (runtimeServiceInfo != null)
             {
@@ -1169,7 +1170,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
             }
             else
             {
-                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                using var jsKey = serviceKey == null ? null : JS.ReturnAs<object, SpawnJSObject>(serviceKey);
                 var keyType = serviceKey?.GetType();
                 var removed = await Run(() => _RemoveKeyedService(serviceType, keyType, jsKey));
                 return removed;
@@ -1179,7 +1180,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         {
             var constructorInfo = SerializableMethodInfo.DeserializeConstructorInfoInfo(constructorInfoJson);
             var isKeyed = keyType != null;
-            var serviceKey = keyType == null ? null : JS.ReturnMe(keyType, jsKey);
+            var serviceKey = keyType == null ? null : JS.ReturnAs(keyType, jsKey);
             var runtimeServiceInfo = RuntimeServices.FirstOrDefault(o => o.ServiceType == serviceType && o.IsKeyed == isKeyed && (!isKeyed || Object.Equals(o.ServiceKey, serviceKey)));
             if (runtimeServiceInfo != null)
             {
@@ -1296,8 +1297,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
             {
                 if (!WhenReady.IsCompleted) await WhenReady;
                 var preparedArgs = PreSerializeArgs(null!, constructorInfo, args, out var transferables);
-                using var argsArray = JS.ReturnMe<Array>(preparedArgs);
-                using var jsKey = serviceKey == null ? null : JS.ReturnMe<SpawnJSObject>(serviceKey);
+                using var argsArray = JS.ReturnAs<object?[]?, Array>(preparedArgs);
+                using var jsKey = serviceKey == null ? null : JS.ReturnAs<object, SpawnJSObject>(serviceKey);
                 var keyType = serviceKey?.GetType();
                 var constructorInfoJson = SerializableMethodInfo.SerializeMethodInfo(constructorInfo);
                 await Run(() => _CreateKeyedService(constructorInfoJson, serviceType!, implementationType, keyType, jsKey, argsArray, argTypes, transferables));

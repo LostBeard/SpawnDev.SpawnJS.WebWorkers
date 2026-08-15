@@ -177,9 +177,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             ServiceDescriptors = WebAssemblyServices.Descriptors;
             if (JS.IsBrowser)
             {
-                WebWorkerSupported = !JS.IsUndefined("Worker");
-                SharedWebWorkerSupported = !JS.IsUndefined("SharedWorker");
-                ServiceWorkerSupported = !JS.IsUndefined("ServiceWorkerRegistration");
+                WebWorkerSupported = JS!.Exists("Worker");
+                SharedWebWorkerSupported = JS!.Exists("SharedWorker");
+                ServiceWorkerSupported = JS!.Exists("ServiceWorkerRegistration");
                 // The app's OWN load origin, from SpawnJS (learned per-app from this runtime's dotnet
                 // instance). This is what worker entry scripts must resolve against and it stays correct
                 // when the app is served from a CDN at a different path than the host page.
@@ -227,7 +227,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 //        Info.IFrameWorker = !string.IsNullOrWhiteSpace(instanceOwnerId);
                 //    }
                 //}
-                BroadcastChannelSupported = !JS.IsUndefined(nameof(BroadcastChannel));
+                BroadcastChannelSupported = JS!.Exists(nameof(BroadcastChannel));
                 if (BroadcastChannelSupported)
                 {
                     // this is the BroadcastChannel all instances will send their instance info on at startup
@@ -669,7 +669,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 }
                 else if (JS.GlobalThis is SharedWorkerGlobalScope sharedWorkerGlobalScope)
                 {
-                    var missedConnections = JS.Call<MessagePort[]>("takeOverOnConnectEvent", OnSharedWorkerConnectCallback = Callback.Create<MessageEvent>(OnSharedWorkerConnect));
+                    var missedConnections = JS.Call<Callback, MessagePort[]>("takeOverOnConnectEvent", OnSharedWorkerConnectCallback = Callback.Create<MessageEvent>(OnSharedWorkerConnect));
                     if (missedConnections != null)
                     {
                         foreach (var m in missedConnections)

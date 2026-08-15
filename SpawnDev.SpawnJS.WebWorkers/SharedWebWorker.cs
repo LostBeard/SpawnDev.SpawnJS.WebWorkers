@@ -18,7 +18,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         public static bool Supported;
         static SharedWebWorker()
         {
-            Supported = !JS.IsUndefined("SharedWorker");
+            Supported = JS!.Exists("SharedWorker");
         }
         /// <summary>
         /// The underlying SharedWorker instance that this SharedWebWorker manages. This property provides access to the shared worker, allowing for communication and control over its lifecycle. The SharedWorker is responsible for handling concurrent processing across multiple browser contexts, and this property allows developers to interact with it directly if needed. Proper management of the shared worker is crucial for ensuring efficient resource usage and preventing memory leaks, especially when disposing of the SharedWebWorker instance.

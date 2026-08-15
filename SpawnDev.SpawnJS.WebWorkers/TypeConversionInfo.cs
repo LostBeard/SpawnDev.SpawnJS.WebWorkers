@@ -1,11 +1,9 @@
-﻿using Microsoft.JSInterop;
-using SpawnDev.SpawnJS.JSObjects;
+﻿using SpawnDev.SpawnJS.JSObjects;
+using SpawnDev.SpawnJS.Marshaller;
 using System.Collections;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SpawnDev.SpawnJS.Marshallers;
-using TypeExtensions = SpawnDev.SpawnJS.Marshallers.TypeExtensions;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
@@ -35,8 +33,6 @@ namespace SpawnDev.SpawnJS.WebWorkers
         static List<Type> IgnoreInterfaces = new List<Type>
         {
             typeof(SpawnJSObjectReference),
-            typeof(IJSObjectReference),
-            typeof(IJSStreamReference),
         };
         static List<Type> DefaultReaderTypes = new List<Type>
         {
@@ -87,11 +83,6 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 return;
             }
             else if (typeof(Callback).IsAssignableFrom(returnType))
-            {
-                useDefaultReader = true;
-                return;
-            }
-            else if (typeof(DotNetObjectReference).IsAssignableFrom(returnType))
             {
                 useDefaultReader = true;
                 return;

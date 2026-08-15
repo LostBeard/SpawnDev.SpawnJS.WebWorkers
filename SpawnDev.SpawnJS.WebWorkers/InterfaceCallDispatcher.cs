@@ -1,6 +1,5 @@
-﻿using System.Reflection;
-using SpawnDev.SpawnJS.Marshallers;
-using TypeExtensions = SpawnDev.SpawnJS.Marshallers.TypeExtensions;
+﻿using SpawnDev.SpawnJS.Marshaller;
+using System.Reflection;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {

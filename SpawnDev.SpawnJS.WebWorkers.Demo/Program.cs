@@ -9,11 +9,12 @@ using System.Net.Http.Json;
 // .Net Wasm, unlike Blazor, does not come with a built-in dependency injection container.
 // SpawnJSApp is a very minimal DI container that can be used when not using something else.
 var builder = SpawnJSAppBuilder.CreateDefault(args, out var JS);
+JS.Verbose = false;
 
 // Verbose enabled debug messages including the marshaller names used for marshalled types
 // JS.Verbose = false;
 
-Console.WriteLine($"SpawnJS app: {AppDomain.CurrentDomain.FriendlyName} {JS.GlobalScopeName} {JS.AppBaseUri}");
+if (JS.Verbose) Console.WriteLine($"SpawnJS app: {AppDomain.CurrentDomain.FriendlyName} {JS.GlobalScopeName} {JS.AppBaseUri}");
 
 // register WebWorkerService
 builder.Services.AddWebWorkerService();

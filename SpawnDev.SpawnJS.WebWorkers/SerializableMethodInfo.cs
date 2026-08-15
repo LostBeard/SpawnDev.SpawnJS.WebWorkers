@@ -1,8 +1,7 @@
 ﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SpawnDev.SpawnJS.Marshallers;
-using TypeExtensions = SpawnDev.SpawnJS.Marshallers.TypeExtensions;
+using TypeExtensions = SpawnDev.SpawnJS.Marshaller.TypeExtensions;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {

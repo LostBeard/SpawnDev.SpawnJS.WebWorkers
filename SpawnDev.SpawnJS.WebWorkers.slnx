@@ -4,8 +4,8 @@
   </Folder>
   <Project Path="SpawnDev.SpawnJS.WebWorkers.Build/SpawnDev.SpawnJS.WebWorkers.Build.csproj" />
   <Project Path="SpawnDev.SpawnJS.WebWorkers.Demo/SpawnDev.SpawnJS.WebWorkers.Demo.csproj" />
+  <Project Path="SpawnDev.SpawnJS.WebWorkers.TestRunner/SpawnDev.SpawnJS.WebWorkers.TestRunner.csproj" />
   <Project Path="SpawnDev.SpawnJS.WebWorkers/SpawnDev.SpawnJS.WebWorkers.csproj">
     <BuildDependency Project="SpawnDev.SpawnJS.WebWorkers.Build/SpawnDev.SpawnJS.WebWorkers.Build.csproj" />
   </Project>
-  <Project Path="SpawnDev.SpawnJS.WebWorkers.TestRunner/SpawnDev.SpawnJS.WebWorkers.TestRunner.csproj" />
 </Solution>
