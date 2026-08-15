@@ -212,6 +212,66 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                     }
                     results.Add(new TaskItem(p));
                 }
+
+                // 4b) Self-heal stale references the bundler-friendly boot module embedded into the output. On an
+                //     incremental build the SDK can regenerate dotnet.<fp>.js with a NEW fingerprint but leave a
+                //     PREVIOUS build's resource list inside it (a static-web-assets metadata-vs-content lag, seen with
+                //     RCL dependencies). Rollup inlines that verbatim, so the bundle carries, for a recompiled asset:
+                //       (a) new URL("_framework/App.<oldfp>.wasm")  - a URL to a file that no longer exists, AND
+                //       (b) a { "name": "App.<oldfp>.wasm", "hash": "sha256-<old>" } boot-manifest entry.
+                //     A worker booting from the bundle then fetches the CURRENT file but validates it against the OLD
+                //     hash -> "Failed to find a valid digest in the 'integrity' attribute ... blocked" (exactly the
+                //     error a hard reload throws; a stale build silently loads until then). The assembled _framework
+                //     here is ground truth (names from each asset's fresh Fingerprint), so rewrite both forms: any
+                //     absent _framework URL -> the file that matches it apart from the fingerprint segment, and any
+                //     boot-manifest entry whose name is stale -> the current name AND the current file's real hash.
+                var stagedNames = new HashSet<string>(
+                    Directory.GetFiles(framework).Select(f => Path.GetFileName(f)!), StringComparer.Ordinal);
+                var hashCache = new Dictionary<string, string>(StringComparer.Ordinal);
+                string CurrentHash(string fileName)
+                {
+                    if (!hashCache.TryGetValue(fileName, out var h))
+                    {
+                        using var sha = System.Security.Cryptography.SHA256.Create();
+                        using var fs = File.OpenRead(Path.Combine(framework, fileName));
+                        h = "sha256-" + Convert.ToBase64String(sha.ComputeHash(fs));
+                        hashCache[fileName] = h;
+                    }
+                    return h;
+                }
+                int totalRemapped = 0;
+                foreach (var item in results)
+                {
+                    var path = item.ItemSpec;
+                    var text = File.ReadAllText(path);
+                    var remapped = 0;
+                    // (a) URL references: new URL("_framework/<file>", ...)
+                    text = System.Text.RegularExpressions.Regex.Replace(
+                        text, @"_framework/([^""'`\s,)\\]+)", m =>
+                        {
+                            var target = RemapStaleFrameworkRef(m.Groups[1].Value, stagedNames);
+                            if (target == null) return m.Value;
+                            remapped++;
+                            return "_framework/" + target;
+                        });
+                    // (b) boot-manifest entries: "name": "<file>", "hash": "sha256-<...>"  (name+hash rewritten together)
+                    text = System.Text.RegularExpressions.Regex.Replace(
+                        text, @"(""name""\s*:\s*"")([^""]+)(""\s*,\s*""hash""\s*:\s*"")sha256-[A-Za-z0-9+/=]+("")", m =>
+                        {
+                            var target = RemapStaleFrameworkRef(m.Groups[2].Value, stagedNames);
+                            if (target == null) return m.Value; // name already current -> trust its hash
+                            remapped++;
+                            return m.Groups[1].Value + target + m.Groups[3].Value + CurrentHash(target) + m.Groups[4].Value;
+                        });
+                    if (remapped > 0)
+                    {
+                        File.WriteAllText(path, text);
+                        totalRemapped += remapped;
+                        Log.LogMessage(MessageImportance.High,
+                            $"SpawnJS.WebWorkers bundle: healed {remapped} stale reference(s) in {Path.GetFileName(path)} (SDK boot-config fingerprint lag).");
+                    }
+                }
+
                 BundleFiles = results.ToArray();
                 File.WriteAllText(stampFile, cacheKey); // record inputs so an unchanged rebuild is a cache hit
                 Log.LogMessage(MessageImportance.High,
@@ -274,6 +334,37 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
 
             using var sha = System.Security.Cryptography.SHA256.Create();
             return Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(sb.ToString())));
+        }
+
+        /// <summary>
+        /// If <paramref name="refName"/> (a filename referenced under <c>_framework/</c> in the rollup output) is
+        /// NOT one of the assembled files, returns the assembled file that differs from it only in the fingerprint
+        /// segment - same segment count, same name parts and extension, only the second-to-last segment differs -
+        /// i.e. the current-build file the stale boot module should have named. Returns null when the reference is
+        /// already valid, has a different shape (e.g. the unfingerprinted variant), or is ambiguous, so only a
+        /// genuinely-broken reference with exactly one fingerprint-drift match is ever rewritten.
+        /// </summary>
+        private static string? RemapStaleFrameworkRef(string refName, HashSet<string> stagedNames)
+        {
+            if (stagedNames.Contains(refName)) return null;   // already valid - most references
+            var parts = refName.Split('.');
+            if (parts.Length < 3) return null;                // need at least name.<fingerprint>.ext
+            string? match = null;
+            foreach (var staged in stagedNames)
+            {
+                var sp = staged.Split('.');
+                if (sp.Length != parts.Length) continue;      // different shape (unfingerprinted variant, etc.)
+                bool same = true;
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (i == parts.Length - 2) continue;      // the fingerprint segment is allowed to differ
+                    if (!string.Equals(parts[i], sp[i], StringComparison.Ordinal)) { same = false; break; }
+                }
+                if (!same) continue;
+                if (match != null) return null;               // more than one candidate - do not guess
+                match = staged;
+            }
+            return match;
         }
 
         private bool Run(string exe, string args, out string combinedOutput)
