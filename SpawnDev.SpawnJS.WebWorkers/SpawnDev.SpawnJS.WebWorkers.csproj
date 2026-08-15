@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.0.0</Version>
-		<PackageReleaseNotes>v2.0.0 - New core</PackageReleaseNotes>
+		<Version>2.0.1</Version>
+		<PackageReleaseNotes>v2.0.1 - Dependency update</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -68,7 +68,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="SpawnDev.SpawnJS" Version="2.0.4" />
+		<PackageReference Include="SpawnDev.SpawnJS" Version="2.0.5" />
 	</ItemGroup>
 	
 	<PropertyGroup>
