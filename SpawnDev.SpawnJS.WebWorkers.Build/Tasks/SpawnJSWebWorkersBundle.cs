@@ -133,9 +133,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                             rel, @"#\[\.\{fingerprint(=[^}\]]*)?\}\][!?]?", string.IsNullOrEmpty(fp) ? "" : "." + fp);
                         // Physical bytes: the logical Identity path (bin/wwwroot) is not assembled yet at this
                         // stage; the real file is the source item (obj/webcil, runtime pack, or nuget cache).
-                        var full = asset.GetMetadata("FullPath");
-                        var orig = asset.GetMetadata("OriginalItemSpec");
-                        var src = File.Exists(full) ? full : (File.Exists(orig) ? orig : null);
+                        var src = PickAssetSource(asset);
                         if (src == null) continue;
                         var dest = Path.Combine(wwwroot, resolved.Replace('/', Path.DirectorySeparatorChar));
                         Directory.CreateDirectory(Path.GetDirectoryName(dest));
@@ -188,6 +186,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                     .Replace("\"./_framework/dotnet.js\"", "\"" + absDotnet + "\"");
                 var stagedLoader = Path.Combine(stagingDir, "loader.js");
                 File.WriteAllText(stagedLoader, loaderText);
+
+                // 2c) Fail with a readable message if the app's own boot graph points at files this build did not
+                //     produce, instead of letting Rollup report it as an unresolved import.
+                VerifyStagedImports(framework, dotnetJs);
+                if (Log.HasLoggedErrors) return false;
 
                 // 3) Run the self-contained Rollup bundle (node only). Emits ONLY main.module.js + main.classic.js.
                 Directory.CreateDirectory(outDir);
@@ -344,6 +347,96 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
         /// already valid, has a different shape (e.g. the unfingerprinted variant), or is ambiguous, so only a
         /// genuinely-broken reference with exactly one fingerprint-drift match is ever rewritten.
         /// </summary>
+        /// <summary>
+        /// Choose the physical file to stage for a static web asset.
+        /// </summary>
+        /// <remarks>
+        /// An asset has two candidate paths: <c>Identity</c>/<c>FullPath</c> is its LOGICAL location, which for a
+        /// generated asset is a COPY in the build output, and <c>OriginalItemSpec</c> is the producer that copy
+        /// came from (typically under obj/). Preferring the copy is not safe: MSBuild does not always refresh it.
+        /// Upgrading a package that ships a <c>*.lib.module.js</c> JS initializer changes that initializer's
+        /// fingerprint and the SDK regenerates the bundler-friendly <c>obj/dotnet.js</c>, but the
+        /// <c>bin/&lt;cfg&gt;/&lt;tfm&gt;/wwwroot/_framework/dotnet.js</c> copy is left behind still statically importing the
+        /// OLD fingerprinted name - and since fingerprints are fixed width the stale copy has the SAME LENGTH, so
+        /// no size-based check notices. Staging those bytes makes Rollup fail with a bare
+        /// "Could not resolve ./../&lt;name&gt;.&lt;oldfp&gt;.lib.module.js", and the very same stale copy is what a dev
+        /// server would serve - under a route and integrity computed from the FRESH content, so the app is broken
+        /// whether or not it is bundled. Observed 2026-08-18 (Gemineachy, SpawnJS 2.0.5 -> 2.1.7).
+        ///
+        /// The asset's own <c>Integrity</c> is computed from the producer, so it settles which candidate is
+        /// authoritative: take the first candidate whose SHA-256 matches. Assets whose two paths are the same
+        /// file (everything from a package) are unaffected.
+        /// </remarks>
+        private string? PickAssetSource(ITaskItem asset)
+        {
+            var candidates = new List<string>(2);
+            void Add(string? p)
+            {
+                if (string.IsNullOrEmpty(p)) return;
+                try { p = Path.GetFullPath(p!); } catch { return; }   // OriginalItemSpec is often project-relative
+                if (File.Exists(p) && !candidates.Contains(p, StringComparer.OrdinalIgnoreCase)) candidates.Add(p);
+            }
+            Add(asset.GetMetadata("FullPath"));
+            Add(asset.GetMetadata("OriginalItemSpec"));
+            if (candidates.Count == 0) return null;
+            if (candidates.Count == 1) return candidates[0];
+
+            var integrity = asset.GetMetadata("Integrity");
+            if (string.IsNullOrEmpty(integrity)) return candidates[0];
+            foreach (var c in candidates)
+            {
+                if (!string.Equals(Sha256Base64(c), integrity, StringComparison.Ordinal)) continue;
+                if (c != candidates[0])
+                    Log.LogMessage(MessageImportance.High,
+                        $"SpawnJS.WebWorkers bundle: '{asset.GetMetadata("RelativePath")}' - the build-output copy " +
+                        $"'{candidates[0]}' does not match the asset's recorded content; staging the producer '{c}' instead.");
+                return c;
+            }
+            // Neither matched. Do not fail the build over it - stage the usual choice and say so, loudly enough
+            // that a resulting Rollup resolve error is traceable to this rather than looking like a tooling bug.
+            Log.LogWarning($"SpawnJS.WebWorkers bundle: no candidate for '{asset.GetMetadata("RelativePath")}' matches its " +
+                           $"recorded Integrity ({integrity}); staging '{candidates[0]}'. If the bundle fails to resolve an " +
+                           "import, this asset's build output is stale - a rebuild (or deleting it) will regenerate it.");
+            return candidates[0];
+        }
+
+        private static string Sha256Base64(string path)
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var fs = File.OpenRead(path);
+            return Convert.ToBase64String(sha.ComputeHash(fs));
+        }
+
+        /// <summary>
+        /// Check that every relative static import in the assembled <c>dotnet(.&lt;fp&gt;).js</c> resolves to a file
+        /// that was actually assembled, and report the missing ones. Rollup would fail anyway, but only with an
+        /// UNRESOLVED_IMPORT stack trace that says nothing about WHY the file is absent; naming the importer and
+        /// the missing target turns a tooling-looking failure back into the build problem it is.
+        /// </summary>
+        private void VerifyStagedImports(string framework, string dotnetJs)
+        {
+            var entry = Path.Combine(framework, dotnetJs);
+            if (!File.Exists(entry)) return;
+            var text = File.ReadAllText(entry);
+            var missing = new List<string>();
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                text, @"(?:from|import)\s*\(?\s*[""'](?<spec>\.[^""']+)[""']"))
+            {
+                var spec = m.Groups["spec"].Value.Split('?', '#')[0];
+                string resolved;
+                try { resolved = Path.GetFullPath(Path.Combine(framework, spec.Replace('/', Path.DirectorySeparatorChar))); }
+                catch { continue; }
+                if (!File.Exists(resolved) && !missing.Contains(resolved, StringComparer.OrdinalIgnoreCase))
+                    missing.Add(resolved);
+            }
+            if (missing.Count == 0) return;
+            Log.LogError($"SpawnJS.WebWorkers bundle: _framework/{dotnetJs} statically imports {missing.Count} file(s) that " +
+                         "were not produced by this build:\n  " + string.Join("\n  ", missing) +
+                         "\nThat file is the app's OWN boot graph, so this is a stale build output, not a bundler problem - " +
+                         "most often a build-output copy left over from a previous package version. Rebuild the project " +
+                         "(or delete the offending file) to regenerate it.");
+        }
+
         private static string? RemapStaleFrameworkRef(string refName, HashSet<string> stagedNames)
         {
             if (stagedNames.Contains(refName)) return null;   // already valid - most references
