@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.1.7</Version>
-		<PackageReleaseNotes>v2.1.7 - Disable service worekr events handlers when runing in a browser extension service worker to prevent resume failure.</PackageReleaseNotes>
+		<Version>2.1.8</Version>
+		<PackageReleaseNotes>v2.1.8 - Pickup changes to JS that did not get picked up last release.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
