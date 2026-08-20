@@ -24,9 +24,9 @@
             _missedConnections.push(e.ports[0]);
         };
     } else if (globalThisTypeName == 'ServiceWorkerGlobalScope' && !isBackgroundExtensionScript) {
-        // Starting Blazor requires using importScripts inside async functions
-        // e.waitUntil is used during the install event to allow importScripts inside async functions
-        // it is resolved after loading is complete
+        // .Net Wasm startup is async. This holds the synchronously fired ewvents for so they are available when .Net Wasm starts
+        // !isBackgroundExtensionScript is used to prevent this from attaching events when i na browser extension service worker because it will
+        // cause script suspend/resume to fail withotu ANY error.
         let holdEvents = true;
         let missedServiceWorkerEvents = [];
         function handleMissedEvent(e) {
