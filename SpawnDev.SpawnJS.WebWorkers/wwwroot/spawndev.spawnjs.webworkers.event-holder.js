@@ -8,6 +8,7 @@
         if (!globalThis.spawnjsVerbose) return;
         console.log.apply(console, arguments);
     }
+    var isBackgroundExtensionScript = globalThis.location?.href?.indexOf('-extension://') !== -1;
     var globalThisTypeName = globalThis.constructor?.name;
     if (globalThisTypeName == 'SharedWorkerGlobalScope') {
         // important for SharedWorker
@@ -22,7 +23,7 @@
         globalThis.onconnect = function (e) {
             _missedConnections.push(e.ports[0]);
         };
-    } else if (globalThisTypeName == 'ServiceWorkerGlobalScope') {
+    } else if (globalThisTypeName == 'ServiceWorkerGlobalScope' && !isBackgroundExtensionScript) {
         // Starting Blazor requires using importScripts inside async functions
         // e.waitUntil is used during the install event to allow importScripts inside async functions
         // it is resolved after loading is complete

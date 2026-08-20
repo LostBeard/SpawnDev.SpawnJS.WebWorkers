@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.1.4</Version>
-		<PackageReleaseNotes>v2.1.4 - Dependency update</PackageReleaseNotes>
+		<Version>2.1.6</Version>
+		<PackageReleaseNotes>v2.1.6 - Disable service worekr events handlers when runing in a browser extension service worker to prevent resume failure.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
