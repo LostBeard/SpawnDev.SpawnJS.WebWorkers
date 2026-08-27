@@ -13,7 +13,7 @@ Run full .Net WebAssembly services in Web Workers, Shared Web Workers, and Servi
 - [TaskPool](#webworkerservicetaskpool) support via WebWorkers
 - Call your own private static methods in background threads (supports service injection)
 - Supports method parameter service injection via `[FromServices]` and `[FromKeyedServices]` parameter attributes
-- Works in .Net WASM 8, 9, and 10
+- Works in .Net WASM 10
 - SharedArrayBuffer is not required. No special HTTP headers to configure.
 - Supports [transferable objects](#transferable-objects)
 - Run .Net WASM in a ServiceWorker
@@ -29,7 +29,7 @@ SpawnDev.SpawnJS.WebWorkers is the [SpawnDev.SpawnJS](https://github.com/LostBea
 If you are using Blazor WASM, use [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers) instead.
 
 ### Supported .Net Versions
-- .Net 8, 9, and 10
+- .Net 10
 - .Net WebAssembly Standalone App (`Microsoft.NET.Sdk.WebAssembly`)
 
 Tested working in the following browsers. Note that Chrome on Android does not currently support SharedWorkers.
