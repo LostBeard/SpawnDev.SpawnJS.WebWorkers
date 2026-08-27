@@ -1,3 +1,4 @@
+using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.WebWorkers;
 
 namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
@@ -102,6 +103,22 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             if (valueGetWorkerA1 != valueSetWorkerA1) throw new Exception("Unexpected result");
             if (valueGetWorkerA2 != valueSetWorkerA1) throw new Exception("_sharedWorker appears not shared");
             if (valueGetWorkerB == valueSetWorkerA1) throw new Exception("_sharedWorker with different name unexpectedly same as first _sharedWorker");
+        }
+        [WebWorkerTest]
+        public async Task ObjectTransferTestClassTest()
+        {
+            var testValue = new ObjectTransferTestClass
+            {
+                SomeValue = webWorkerService.InstanceId,
+                Data = new byte[] { 1, 3, 5, 42 }
+            };
+            using var worker = await webWorkerService.GetWebWorker();
+            var mathService = worker!.GetService<IMathsService>();
+            await mathService.SetObjectValueTest(testValue);
+            var readBack = await mathService.GetObjectValueTest();
+            if (readBack == null) throw new Exception("Readback failed");
+            if (readBack.SomeValue != testValue.SomeValue) throw new Exception("Readback string failed");
+            if (readBack.Data == null || !testValue.Data.SequenceEqual(readBack.Data)) throw new Exception("Readback byte[] failed");
         }
     }
 }

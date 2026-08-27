@@ -10,6 +10,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
     {
         public int Progress { get; set; }
     }
+    public class ObjectTransferTestClass
+    {
+        public string SomeValue { get; set; }
+        public byte[] Data { get; set; }
+    }
 
     public interface IMathsService
     {
@@ -19,6 +24,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
         Task<double> EstimatePISlice(int sumStart, int sumLength);
         Task SetValueTest(string newValue);
         Task<string> GetValueTest();
+        Task SetObjectValueTest(ObjectTransferTestClass? newValue);
+        Task<ObjectTransferTestClass?> GetObjectValueTest();
         Task<double> TestMultiSigMethod(double value);
         Task<string> TestMultiSigMethod(string value);
         Task<double> TestMultiSigMethod(int value);
@@ -229,6 +236,17 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             var typeofT1 = typeof(T1);
             var typeofT2 = typeof(T2);
             return Task.FromResult(value2);
+        }
+
+        ObjectTransferTestClass? _objectTransferTestClassValue;
+        public async Task SetObjectValueTest(ObjectTransferTestClass? newValue)
+        {
+            _objectTransferTestClassValue = newValue;
+        }
+
+        public async Task<ObjectTransferTestClass?> GetObjectValueTest()
+        {
+            return _objectTransferTestClassValue;
         }
     }
 }

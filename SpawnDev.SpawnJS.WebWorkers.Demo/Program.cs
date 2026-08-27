@@ -33,7 +33,7 @@ await builder.Build().RunAsync(async (app) =>
 {
     var webWorkerService = app.Services.GetRequiredService<WebWorkerService>();
 
-   if (JS.IsWindow)
+    if (JS.IsWindow)
     {
         var tester = new AsyncCallDispatcherTest();
         var worker = await webWorkerService.GetWebWorker();
