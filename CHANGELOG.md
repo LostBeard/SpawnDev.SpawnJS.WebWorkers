@@ -2,6 +2,20 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.1.10
+
+- **Requires `SpawnDev.SpawnJS` >= 2.1.9**, which is where the app-root resolver stopped matching the
+  framework folder BY NAME. That is the other half of the `SpawnJSWebWorkersFrameworkFolderName` fix
+  released in 2.1.9: this package rewrites the backslash-escaped reference in the published output, and
+  SpawnJS no longer depends on the name at all. Either alone is sufficient - both were verified
+  independently - but a WebWorkers consumer only ever receives SpawnJS transitively, so without this
+  version bump the SpawnJS fix could not reach one.
+
+  SpawnJS 2.1.9 identifies the framework folder by WHAT was loaded rather than what the folder is called:
+  the runtime entry and every boot-manifest resource live in it, so the app root is its parent, while a
+  bundled `main.classic.js` / `main.module.js` already sits AT the app root. No behaviour change for a
+  normal `_framework` publish.
+
 ## 2.1.9
 
 - **The bundle now keeps every bundled module's ORIGINAL base URL** (GitHub issue #1). Bundling lifts the
