@@ -2395,7 +2395,7 @@ function _mergeNamespaces(n3, m) {
   }
   return Object.defineProperty(n3, Symbol.toStringTag, { value: "Module" });
 }
-function decodeInteger(reader, relative5) {
+function decodeInteger(reader, relative6) {
   let value = 0;
   let shift = 0;
   let integer = 0;
@@ -2410,10 +2410,10 @@ function decodeInteger(reader, relative5) {
   if (shouldNegate) {
     value = -2147483648 | -value;
   }
-  return relative5 + value;
+  return relative6 + value;
 }
-function encodeInteger(builder, num, relative5) {
-  let delta = num - relative5;
+function encodeInteger(builder, num, relative6) {
+  let delta = num - relative6;
   delta = delta < 0 ? -delta << 1 | 1 : delta << 1;
   do {
     let clamped = delta & 31;
@@ -28682,8 +28682,8 @@ for (let i = 0; i < chars2.length; i++) {
   intToChar2[i] = c;
   charToInt2[c] = i;
 }
-function encodeInteger2(builder, num, relative5) {
-  let delta = num - relative5;
+function encodeInteger2(builder, num, relative6) {
+  let delta = num - relative6;
   delta = delta < 0 ? -delta << 1 | 1 : delta << 1;
   do {
     let clamped = delta & 31;
@@ -31480,12 +31480,18 @@ ${wrappedIds.map((id) => `	${JSON.stringify(relative4(process.cwd(), id))}`).joi
 }
 
 // spawnjs-bundle.mjs
-import { join as join3 } from "node:path";
-var [input, outDir] = process.argv.slice(2);
+import { join as join3, relative as relative5, resolve as resolvePath } from "node:path";
+var [input, outDir, wwwrootArg] = process.argv.slice(2);
 if (!input || !outDir) {
-  console.error("usage: node rollup.bundled.mjs <loaderEntry.js> <outDir>");
+  console.error("usage: node rollup.bundled.mjs <loaderEntry.js> <outDir> [<appWwwroot>]");
   process.exit(2);
 }
+var wwwroot = wwwrootArg ? resolvePath(wwwrootArg) : null;
+var SELF = "__spawnjsBundleUrl";
+var INTRO_ES = `const ${SELF} = import.meta.url;
+`;
+var INTRO_CLASSIC = `var ${SELF} = (typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : typeof self !== 'undefined' && self.location ? self.location.href : typeof location !== 'undefined' ? location.href : '');
+`;
 var assetRe = /\.(wasm|dat|blat|pdb)$/i;
 var FW_PREFIX = "\0spawnjs-fw-asset:";
 var frameworkAssetsPlugin = {
@@ -31500,18 +31506,41 @@ var frameworkAssetsPlugin = {
   load(id) {
     if (id.startsWith(FW_PREFIX)) {
       const name = id.slice(FW_PREFIX.length);
-      return `export default new URL(${JSON.stringify("_framework/" + name)}, import.meta.url).href;`;
+      return `export default new URL(${JSON.stringify("_framework/" + name)}, ${SELF}).href;`;
     }
     return null;
   }
 };
-var importMetaPlugin = {
-  name: "worker-safe-import-meta-url",
-  resolveImportMeta(property3, { format }) {
-    if (property3 === "url" && (format === "iife" || format === "umd" || format === "cjs")) {
-      return `(typeof document!=='undefined'&&document.currentScript?document.currentScript.src:typeof self!=='undefined'&&self.location?self.location.href:typeof location!=='undefined'?location.href:'')`;
-    }
+function appPath(moduleId) {
+  if (!wwwroot || !moduleId || moduleId.startsWith("\0")) return null;
+  let rel;
+  try {
+    rel = relative5(wwwroot, resolvePath(moduleId));
+  } catch {
     return null;
+  }
+  if (!rel || rel.startsWith("..")) return null;
+  return rel.split(/[\\/]/).join("/");
+}
+var originBasePlugin = {
+  name: "spawnjs-origin-base",
+  resolveImportMeta(property3, { moduleId }) {
+    if (property3 !== "url") return null;
+    const rel = appPath(moduleId);
+    if (rel === null) return SELF;
+    return `new URL(${JSON.stringify(rel)} + String(${SELF}).replace(/^[^?#]*/, ''), ${SELF}).href`;
+  },
+  renderDynamicImport({ moduleId, targetModuleId }) {
+    if (targetModuleId !== null) return null;
+    const rel = appPath(moduleId);
+    if (rel === null) return null;
+    const slash = rel.lastIndexOf("/");
+    if (slash < 0) return null;
+    const base2 = `new URL(${JSON.stringify(rel.slice(0, slash + 1))}, ${SELF}).href`;
+    return {
+      left: `import(((s) => typeof s === "string" && s[0] === "." && (s[1] === "/" || (s[1] === "." && s[2] === "/")) ? new URL(s, ${base2}).href : s)(`,
+      right: "))"
+    };
   }
 };
 function onwarn(warning, warn) {
@@ -31521,7 +31550,8 @@ function onwarn(warning, warn) {
 var bundle = await rollup({
   input,
   plugins: [
-    importMetaPlugin,
+    // Keeps import.meta.url + runtime dynamic imports pointing at each module's origin.
+    originBasePlugin,
     // Reference the existing _framework .wasm/.dat as-is (no emit, original names).
     frameworkAssetsPlugin,
     nodeResolve({ extensions: [".js"] }),
@@ -31529,8 +31559,8 @@ var bundle = await rollup({
   ],
   onwarn
 });
-await bundle.write({ file: join3(outDir, "main.module.js"), format: "es" });
-await bundle.write({ file: join3(outDir, "main.classic.js"), format: "iife" });
+await bundle.write({ file: join3(outDir, "main.module.js"), format: "es", intro: INTRO_ES });
+await bundle.write({ file: join3(outDir, "main.classic.js"), format: "iife", intro: INTRO_CLASSIC });
 await bundle.close();
 console.log(`SpawnJS bundle: wrote main.module.js + main.classic.js to ${outDir}`);
 /*! Bundled license information:

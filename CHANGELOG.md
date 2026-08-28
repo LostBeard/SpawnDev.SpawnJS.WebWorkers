@@ -2,6 +2,38 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.1.9
+
+- **The bundle now keeps every bundled module's ORIGINAL base URL** (GitHub issue #1). Bundling lifts the
+  whole boot graph out of `_framework/` up to the app root, which silently re-based everything the .Net
+  runtime resolves at RUNTIME - and Rollup cannot rewrite those, because the URLs only exist at runtime:
+  - `import.meta.url`, which the loader stores as `loaderHelpers.scriptUrl` and turns into
+    `scriptDirectory` / `locateFile`. It reported the app root instead of `_framework/`.
+  - a dynamic `import(url)` with a non-literal specifier - which is how EVERY `JSHost.ImportAsync` module
+    is loaded (`dotnet.runtime.js` does a bare `import(module_url)`). Avalonia's
+    `JSHost.ImportAsync("avalonia", "./avalonia.js")` therefore resolved to `_framework/avalonia.js`
+    unbundled and to `/avalonia.js` - a 404 - from the bundle, and the same applied to any library or app
+    that ships a JS module beside `_framework` and imports it relatively.
+
+  The bundler now reports each module's own original location and resolves its relative dynamic imports
+  against its own original directory, so the bundle resolves exactly as the unbundled output did. Avalonia
+  browser apps work with no import map and no copy of `avalonia.js` into wwwroot. The classic bundle also
+  captures its own script URL ONCE at top-level evaluation instead of re-reading `document.currentScript`
+  at each use (which is null from an async continuation and silently fell back to the PAGE url under a CDN
+  load) - which also makes `main.classic.js` smaller.
+- **`SpawnJSWebWorkersFrameworkFolderName` now also rewrites backslash-escaped references** to the renamed
+  folder (`_framework\/`, the form a JS regex literal or a JSON string uses). SpawnJS derives the app root
+  with `path.replace(/(^|\/)_framework\/$/, '$1')`; with that reference missed, the app root pointed
+  INSIDE the renamed folder and every worker was requested at `<root>/framework/main.classic.js` (404).
+- **A needed static web asset that has no file on disk is now reported.** The build path silently skipped
+  any `_framework/*` or `*.lib.module.js` asset whose candidate paths did not exist, which surfaced much
+  later as an unresolved import naming the importer instead of the missing asset.
+- **Fingerprint placeholders that state their value are honored.** `name#[.{fingerprint=abc}]!.ext` means
+  the fingerprint IS `abc`; the task substituted the item's own `Fingerprint` metadata instead, which is a
+  different value whenever the placeholder names another asset's fingerprint. The unresolved-import error
+  also now lists what was staged under a near-miss name, so a fingerprint mismatch is visible rather than
+  guessed at.
+
 ## 2.1.3
 
 - **Bundle no longer stages a stale build-output copy of an asset.** A static web asset has two paths:

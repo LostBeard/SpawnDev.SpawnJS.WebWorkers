@@ -67,6 +67,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                 // 1) Rewrite textual references in the published wwwroot. Replace the token WITH its bounding
                 //    separators to avoid matching an unrelated identifier substring: "_framework/" and "/_framework"
                 //    and quoted "_framework" cover the URL/path forms the runtime and the bundle emit.
+                //    The BACKSLASH-ESCAPED separator forms matter just as much: a JS regex literal or a
+                //    JSON string writes the same path as "_framework\/". SpawnJS's own app-root resolver is
+                //    exactly that - `path.replace(/(^|\/)_framework\/$/, '$1')` - and it decides the base
+                //    every worker entry URL is built from. Missing it left the app root pointing INSIDE the
+                //    renamed folder, so workers were requested at <root>/framework/main.classic.js (404).
                 var textExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 { ".js", ".mjs", ".html", ".htm", ".json", ".css", ".webmanifest", ".map" };
                 int filesChanged = 0;
@@ -78,6 +83,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                     foreach (var (old, nw) in renames)
                     {
                         updated = updated
+                            .Replace(old + "\\/", nw + "\\/")   // _framework\/  (regex literal / JSON escape)
+                            .Replace("\\/" + old, "\\/" + nw)   // \/_framework
                             .Replace(old + "/", nw + "/")     // _framework/asset
                             .Replace("/" + old, "/" + nw)     // ./_framework , /_framework
                             .Replace("\"" + old + "\"", "\"" + nw + "\"")  // bare "_framework"

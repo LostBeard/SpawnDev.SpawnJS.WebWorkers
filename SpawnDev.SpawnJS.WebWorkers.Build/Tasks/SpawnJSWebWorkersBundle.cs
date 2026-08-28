@@ -125,16 +125,20 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                         var relLower = rel.Replace('\\', '/').ToLowerInvariant();
                         bool needed = relLower.StartsWith("_framework/") || relLower.EndsWith(".lib.module.js");
                         if (!needed) continue;
-                        // RelativePath holds a fingerprint placeholder - name#[.{fingerprint}]!.ext or
-                        // name#[.{fingerprint=abc}]?.ext. Substitute the asset's Fingerprint so the assembled
-                        // on-disk name matches the import (and the dev server's served endpoint route).
-                        var fp = asset.GetMetadata("Fingerprint");
-                        var resolved = System.Text.RegularExpressions.Regex.Replace(
-                            rel, @"#\[\.\{fingerprint(=[^}\]]*)?\}\][!?]?", string.IsNullOrEmpty(fp) ? "" : "." + fp);
+                        var resolved = ResolveFingerprintedPath(rel, asset.GetMetadata("Fingerprint"));
                         // Physical bytes: the logical Identity path (bin/wwwroot) is not assembled yet at this
                         // stage; the real file is the source item (obj/webcil, runtime pack, or nuget cache).
                         var src = PickAssetSource(asset);
-                        if (src == null) continue;
+                        if (src == null)
+                        {
+                            // Never skip a needed asset silently: an absent one shows up later as a Rollup
+                            // UNRESOLVED_IMPORT (or a "not produced by this build" error) that points at the
+                            // importer instead of at the asset we could not find.
+                            Log.LogWarning($"SpawnJS.WebWorkers bundle: no file on disk for static web asset '{rel}' " +
+                                           $"(FullPath '{asset.GetMetadata("FullPath")}', OriginalItemSpec " +
+                                           $"'{asset.GetMetadata("OriginalItemSpec")}'); it was NOT staged for the bundle.");
+                            continue;
+                        }
                         var dest = Path.Combine(wwwroot, resolved.Replace('/', Path.DirectorySeparatorChar));
                         Directory.CreateDirectory(Path.GetDirectoryName(dest));
                         File.Copy(src, dest, true);
@@ -195,7 +199,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                 // 3) Run the self-contained Rollup bundle (node only). Emits ONLY main.module.js + main.classic.js.
                 Directory.CreateDirectory(outDir);
                 Log.LogMessage(MessageImportance.High, $"SpawnJS.WebWorkers bundle: rollup against {dotnetJs} -> main.classic.js + main.module.js...");
-                var rollupArgs = $"\"{rollupBundle}\" \"{stagedLoader}\" \"{outDir}\"";
+                // The wwwroot is passed so the bundler can keep each bundled module's ORIGINAL base URL:
+                // the two entrypoints sit at the app root, but the modules they inline came from _framework/
+                // (and _content/...), and the .Net runtime resolves both import.meta.url and JSHost.ImportAsync
+                // module urls relative to where the importing module lived.
+                var rollupArgs = $"\"{rollupBundle}\" \"{stagedLoader}\" \"{outDir}\" \"{wwwroot.TrimEnd('\\', '/')}\"";
                 if (!Run(NodeExe, rollupArgs, out var rollupLog))
                 {
                     Log.LogError("SpawnJS.WebWorkers bundle: Node/Rollup failed. Node.js must be on PATH " +
@@ -348,6 +356,30 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
         /// genuinely-broken reference with exactly one fingerprint-drift match is ever rewritten.
         /// </summary>
         /// <summary>
+        /// Resolve a static web asset's <c>RelativePath</c> to the name it is actually served (and imported)
+        /// under, by substituting its fingerprint placeholder.
+        /// </summary>
+        /// <remarks>
+        /// A placeholder is either <c>name#[.{fingerprint}]!.ext</c> - fill in from the asset's own
+        /// <c>Fingerprint</c> metadata - or <c>name#[.{fingerprint=abc}]!.ext</c>, which STATES the value and
+        /// must win. The two are not interchangeable: the SDK writes the explicit form whenever the placeholder
+        /// names a different asset's fingerprint than the item's own. The compressed variants make that visible -
+        /// <c>...#[.{fingerprint=pw7pg93i7q}]!.lib.module.js.gz</c> carries <c>Fingerprint=mso25y89w2</c> (the
+        /// fingerprint of the .gz itself), and is served as <c>....pw7pg93i7q.lib.module.js.gz</c>. Taking the
+        /// item's own Fingerprint there stages the file under a name nothing imports, which surfaces much later
+        /// as an unresolved import of the app's own boot graph.
+        /// </remarks>
+        internal static string ResolveFingerprintedPath(string relativePath, string fingerprint)
+        {
+            return System.Text.RegularExpressions.Regex.Replace(
+                relativePath, @"#\[\.\{fingerprint(?:=(?<value>[^}\]]*))?\}\][!?]?", m =>
+                {
+                    var value = m.Groups["value"].Success ? m.Groups["value"].Value : fingerprint;
+                    return string.IsNullOrEmpty(value) ? "" : "." + value;
+                });
+        }
+
+        /// <summary>
         /// Choose the physical file to stage for a static web asset.
         /// </summary>
         /// <remarks>
@@ -430,11 +462,44 @@ namespace SpawnDev.SpawnJS.WebWorkers.Build.Tasks
                     missing.Add(resolved);
             }
             if (missing.Count == 0) return;
+            // Name what IS present under the same folder with the same shape, so a fingerprint mismatch (the
+            // staged name differing from the imported one) is visible in the error rather than guessed at.
+            var detail = new StringBuilder();
+            foreach (var m in missing)
+            {
+                detail.Append("\n  ").Append(m);
+                var dir = Path.GetDirectoryName(m);
+                var near = Directory.Exists(dir) ? NearestNames(dir!, Path.GetFileName(m)) : new List<string>();
+                if (near.Count > 0)
+                    detail.Append("\n      staged alongside it: ").Append(string.Join(", ", near));
+            }
             Log.LogError($"SpawnJS.WebWorkers bundle: _framework/{dotnetJs} statically imports {missing.Count} file(s) that " +
-                         "were not produced by this build:\n  " + string.Join("\n  ", missing) +
+                         "were not produced by this build:" + detail +
                          "\nThat file is the app's OWN boot graph, so this is a stale build output, not a bundler problem - " +
                          "most often a build-output copy left over from a previous package version. Rebuild the project " +
                          "(or delete the offending file) to regenerate it.");
+        }
+
+        /// <summary>
+        /// Staged file names in <paramref name="dir"/> that match <paramref name="fileName"/> apart from a
+        /// fingerprint segment - i.e. the same name with one dotted segment added, removed or changed.
+        /// </summary>
+        private static List<string> NearestNames(string dir, string fileName)
+        {
+            var wanted = fileName.Split('.');
+            var result = new List<string>();
+            foreach (var candidate in Directory.GetFiles(dir).Select(Path.GetFileName))
+            {
+                var parts = candidate!.Split('.');
+                if (Math.Abs(parts.Length - wanted.Length) > 1) continue;
+                // Same first segment and same extension, differing only in the middle -> a fingerprint drift.
+                if (!string.Equals(parts[0], wanted[0], StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.Equals(parts[parts.Length - 1], wanted[wanted.Length - 1], StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(candidate, fileName, StringComparison.OrdinalIgnoreCase)) continue;
+                result.Add(candidate);
+                if (result.Count == 4) break;
+            }
+            return result;
         }
 
         private static string? RemapStaleFrameworkRef(string refName, HashSet<string> stagedNames)
