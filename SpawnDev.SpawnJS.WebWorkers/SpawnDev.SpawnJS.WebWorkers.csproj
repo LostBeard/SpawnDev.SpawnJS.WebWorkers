@@ -5,7 +5,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Version>2.1.10</Version>
-		<PackageReleaseNotes>v2.1.8 - Pickup changes to JS that did not get picked up last release.</PackageReleaseNotes>
+		<PackageReleaseNotes>v2.1.10 - Raises the SpawnDev.SpawnJS floor to 2.1.9 so its app-root fix reaches consumers, which only ever receive SpawnJS transitively. No code change of its own.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
