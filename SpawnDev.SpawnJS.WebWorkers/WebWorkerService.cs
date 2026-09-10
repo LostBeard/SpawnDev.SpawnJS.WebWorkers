@@ -17,6 +17,10 @@ namespace SpawnDev.SpawnJS.WebWorkers
         const string instanceOwnerIdKey = "instanceOwnerIdKey";
         const string childIdKey = "tempIdKey";
         /// <summary>
+        /// WebWorkerService is a singleton, this is the that instance if it has been created.
+        /// </summary>
+        public static WebWorkerService? Instance { get; private set; }
+        /// <summary>
         /// Completes successfully when asynchronous initialization has completed
         /// </summary>
         public Task Ready => _Ready ??= InitAsync();
@@ -169,6 +173,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public WebWorkerService(IBackgroundServiceManager webAssemblyServices, SpawnJSRuntime js)
         {
+            Instance ??= this;
             JS = js;
             GlobalScope = JS.GlobalScope;
             InstanceId = JS.InstanceId;
