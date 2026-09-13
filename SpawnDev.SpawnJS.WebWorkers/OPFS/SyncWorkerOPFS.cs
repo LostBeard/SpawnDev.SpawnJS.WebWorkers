@@ -46,7 +46,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await root.OpenPathStream(path, fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
+                return await root.OpenPathStream(path, fileMode, fileAccess, OPFSFileOptions.Auto, cancellationToken);
             }
         }
         public static async Task<Stream> OpenInPlacePathStream(string path, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
@@ -71,7 +71,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await root.OpenStream(name, fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
+                return await root.OpenStream(name, fileMode, fileAccess, OPFSFileOptions.Auto, cancellationToken);
             }
         }
         public static async Task<Stream> OpenInPlaceStream(string name, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
@@ -96,7 +96,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await fileHandle.OpenStream(fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
+                return await fileHandle.OpenStream(fileMode, fileAccess, OPFSFileOptions.Auto, cancellationToken);
             }
         }
     }
