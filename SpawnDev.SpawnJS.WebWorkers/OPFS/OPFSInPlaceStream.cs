@@ -1,16 +1,17 @@
 ﻿using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.Toolbox;
+using SpawnDev.SpawnJS.WebWorkers.OPFS.Worker;
 
 namespace SpawnDev.SpawnJS.WebWorkers.OPFS
 {
     /// <summary>
     /// Access OPFS asynchronously using the synchronous API from Window, DedicatedWorker, and SharedWorker scopes.<br/>
     /// If not already running in a dedicated worker and the current scope can start a dedicateed worker<br/>
-    /// OPFSStream.Open() will start a new dedicated worker is one is not already working and use it for OPFS access.<br/>
+    /// OPFSInPlaceStream.Open() will start a new dedicated worker is one is not already working and use it for OPFS access.<br/>
     /// Purpose:<br/>
-    /// This allows in-place read and write access to OPFS files which is not possible with the more easily accessible async access.
+    /// This allows in-place write access to OPFS files which is only possible via FileSystemSyncAccessHandle.
     /// </summary>
-    public class OPFSStream : JSReadWriteStreamBase
+    public class OPFSInPlaceStream : JSReadWriteStreamBase
     {
         static GlobalScope[] _envSupported = [GlobalScope.Window, GlobalScope.DedicatedWorker, GlobalScope.SharedWorker];
         /// <summary>
@@ -41,15 +42,30 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <inheritdoc/>
         public override long Position { get => _position; set => Seek(value, SeekOrigin.Begin); }
         private long _position = 0;
-        private IOPFSStreamWorkerService _handleManager;
+        /// <summary>
+        /// Returns true of the file is open
+        /// </summary>
+        public bool IsOpen { get; private set; }
+        /// <summary>
+        /// Returns true if the file is open and direct sync Stream access is possible
+        /// </summary>
+        public bool IsSyncOpen => IsOpen && _syncAccessHandle != null;
+        private IOPFSAsyncSyncAccess _handleManager;
+        /// <summary>
+        /// If _handleManager is running in this instance and not a worker this returns the sync handle which enables<br/>
+        /// synchronous stream access
+        /// </summary>
+        private FileSystemSyncAccessHandle? _syncAccessHandle => !_supportSyncAccess ? null : _handleManager?.SyncAccessHandle;
         /// <summary>
         /// Fires when this stream is disposed
         /// </summary>
-        public event Action<OPFSStream>? OnDisposed;
-        public static Dictionary<string, OPFSStream> WorkerStreams { get; } = new Dictionary<string, OPFSStream>();
-        private OPFSStream(IOPFSStreamWorkerService handleManager)
+        public event Action<OPFSInPlaceStream>? OnDisposed;
+        private static Dictionary<string, OPFSInPlaceStream> WorkerStreams { get; } = new Dictionary<string, OPFSInPlaceStream>();
+        private bool _supportSyncAccess { get; }
+        private OPFSInPlaceStream(IOPFSAsyncSyncAccess handleManager, bool supportSyncAccess)
         {
             _handleManager = handleManager;
+            _supportSyncAccess = supportSyncAccess;
         }
         private static SemaphoreSlim _openLimiter = new SemaphoreSlim(1);
         /// <summary>
@@ -59,37 +75,38 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <param name="path">The file entry name to open</param>
         /// <param name="fileMode">FileMode</param>
         /// <param name="fileAccess">FileAccess</param>
+        /// <param name="cancellationToken">FileAccess</param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public static async Task<OPFSStream> OpenPath(FileSystemDirectoryHandle root, string path, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
+        public static async Task<OPFSInPlaceStream> OpenPath(FileSystemDirectoryHandle root, string path, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
         {
-            var haveLimtier = false;
+            var haveLimiter = false;
             try
             {
                 await _openLimiter.WaitAsync(cancellationToken);
-                haveLimtier = true;
+                haveLimiter = true;
                 if (WebWorkerService == null)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires WebWorkerService");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires WebWorkerService");
                 }
                 else if (JS == null || !JS.IsBrowser)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires OperatingSystem.IsBrowser() == true");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires OperatingSystem.IsBrowser() == true");
                 }
                 else if (JS.IsServiceWorkerGlobalScope)
                 {
                     // this scope does not support sync access and cannot start a dedicated worker that does
-                    throw new NotImplementedException($"{nameof(OPFSStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
                 }
                 else if (JS.IsDedicatedWorkerGlobalScope)
                 {
                     // this scope supports sync access
                     // OPFSStreamWorkerService will run in this scope
-                    var fileManager = new OPFSStreamWorkerService();
-                    OPFSStream? ret = null;
+                    var fileManager = new OPFSAsyncSyncAccess();
+                    OPFSInPlaceStream? ret = null;
                     try
                     {
-                        ret = new OPFSStream(fileManager);
+                        ret = new OPFSInPlaceStream(fileManager, true);
                         await ret.OpenPathInternal(root, path, fileMode, fileAccess, cancellationToken);
                     }
                     catch
@@ -105,9 +122,9 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     // OPFSStreamWorkerService will run in the dedicated worker scope
                     _webWorker ??= await WebWorkerService.GetWebWorker();
                     var serviceKey = Guid.NewGuid().ToString();
-                    await _webWorker!.New<IOPFSStreamWorkerService>(serviceKey, () => new OPFSStreamWorkerService());
-                    var fileManager = _webWorker.GetKeyedService<IOPFSStreamWorkerService>(serviceKey);
-                    var ret = new OPFSStream(fileManager);
+                    await _webWorker!.New<IOPFSAsyncSyncAccess>(serviceKey, () => new OPFSAsyncSyncAccess());
+                    var fileManager = _webWorker.GetKeyedService<IOPFSAsyncSyncAccess>(serviceKey);
+                    var ret = new OPFSInPlaceStream(fileManager, false);
                     ret.OnDisposed += async (_) => await InstanceDisposed(serviceKey);
                     WorkerStreams.Add(serviceKey, ret);
                     try
@@ -124,12 +141,12 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 else
                 {
                     // unsupported scope
-                    throw new NotImplementedException($"{nameof(OPFSStream)} unsupported scope {JS.GlobalScope}");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} unsupported scope {JS.GlobalScope}");
                 }
             }
             finally
             {
-                if (haveLimtier) _openLimiter.Release();
+                if (haveLimiter) _openLimiter.Release();
             }
         }
         /// <summary>
@@ -140,7 +157,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <param name="fileAccess"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static async Task<OPFSStream> OpenPath(string path, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
+        public static async Task<OPFSInPlaceStream> OpenPath(string path, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
         {
             using var navigator = JS!.Get<Navigator>("navigator");
             using var root = await navigator.Storage.GetDirectory();
@@ -155,35 +172,35 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <param name="fileAccess">FileAccess</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static async Task<OPFSStream> Open(FileSystemDirectoryHandle root, string name, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
+        public static async Task<OPFSInPlaceStream> Open(FileSystemDirectoryHandle root, string name, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
         {
-            var haveLimtier = false;
+            var haveLimiter = false;
             try
             {
                 await _openLimiter.WaitAsync(cancellationToken);
-                haveLimtier = true;
+                haveLimiter = true;
                 if (WebWorkerService == null)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires WebWorkerService");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires WebWorkerService");
                 }
                 else if (JS == null || !JS.IsBrowser)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires OperatingSystem.IsBrowser() == true");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires OperatingSystem.IsBrowser() == true");
                 }
                 else if (JS.IsServiceWorkerGlobalScope)
                 {
                     // this scope does not support sync access and cannot start a dedicated worker that does
-                    throw new NotImplementedException($"{nameof(OPFSStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
                 }
                 else if (JS.IsDedicatedWorkerGlobalScope)
                 {
                     // this scope supports sync access
                     // OPFSStreamWorkerService will run in this scope
-                    var fileManager = new OPFSStreamWorkerService();
-                    OPFSStream? ret = null;
+                    var fileManager = new OPFSAsyncSyncAccess();
+                    OPFSInPlaceStream? ret = null;
                     try
                     {
-                        ret = new OPFSStream(fileManager);
+                        ret = new OPFSInPlaceStream(fileManager, true);
                         await ret.OpenNameInternal(root, name, fileMode, fileAccess, cancellationToken);
                     }
                     catch
@@ -199,9 +216,9 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     // OPFSStreamWorkerService will run in the dedicated worker scope
                     _webWorker ??= await WebWorkerService.GetWebWorker();
                     var serviceKey = Guid.NewGuid().ToString();
-                    await _webWorker!.New<IOPFSStreamWorkerService>(serviceKey, () => new OPFSStreamWorkerService());
-                    var fileManager = _webWorker.GetKeyedService<IOPFSStreamWorkerService>(serviceKey);
-                    var ret = new OPFSStream(fileManager);
+                    await _webWorker!.New<IOPFSAsyncSyncAccess>(serviceKey, () => new OPFSAsyncSyncAccess());
+                    var fileManager = _webWorker.GetKeyedService<IOPFSAsyncSyncAccess>(serviceKey);
+                    var ret = new OPFSInPlaceStream(fileManager, false);
                     ret.OnDisposed += async (_) => await InstanceDisposed(serviceKey);
                     WorkerStreams.Add(serviceKey, ret);
                     try
@@ -218,12 +235,12 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 else
                 {
                     // unsupported scope
-                    throw new NotImplementedException($"{nameof(OPFSStream)} unsupported scope {JS.GlobalScope}");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} unsupported scope {JS.GlobalScope}");
                 }
             }
             finally
             {
-                if (haveLimtier) _openLimiter.Release();
+                if (haveLimiter) _openLimiter.Release();
             }
         }
         /// <summary>
@@ -234,7 +251,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <param name="fileAccess"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static async Task<OPFSStream> Open(string name, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
+        public static async Task<OPFSInPlaceStream> Open(string name, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
         {
             using var navigator = JS!.Get<Navigator>("navigator");
             using var root = await navigator.Storage.GetDirectory();
@@ -249,35 +266,35 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public static async Task<OPFSStream> Open(FileSystemFileHandle fileHandle, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
+        public static async Task<OPFSInPlaceStream> Open(FileSystemFileHandle fileHandle, FileMode fileMode = FileMode.OpenOrCreate, FileAccess fileAccess = FileAccess.ReadWrite, CancellationToken cancellationToken = default)
         {
-            var haveLimtier = false;
+            var haveLimiter = false;
             try
             {
                 await _openLimiter.WaitAsync(cancellationToken);
-                haveLimtier = true;
+                haveLimiter = true;
                 if (WebWorkerService == null)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires WebWorkerService");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires WebWorkerService");
                 }
                 else if (JS == null || !JS.IsBrowser)
                 {
-                    throw new NotImplementedException($"{nameof(OPFSStream)} requires OperatingSystem.IsBrowser() == true");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} requires OperatingSystem.IsBrowser() == true");
                 }
                 else if (JS.IsServiceWorkerGlobalScope)
                 {
                     // this scope does not support sync access and cannot start a dedicated worker that does
-                    throw new NotImplementedException($"{nameof(OPFSStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} is not supported in service workers. ServiceWorker scope does not support sync access and cannot start a dedicated worker that does.");
                 }
                 else if (JS.IsDedicatedWorkerGlobalScope)
                 {
                     // this scope supports sync access
                     // OPFSStreamWorkerService will run in this scope
-                    var fileManager = new OPFSStreamWorkerService();
-                    OPFSStream? ret = null;
+                    var fileManager = new OPFSAsyncSyncAccess();
+                    OPFSInPlaceStream? ret = null;
                     try
                     {
-                        ret = new OPFSStream(fileManager);
+                        ret = new OPFSInPlaceStream(fileManager, true);
                         await ret.OpenInternal(fileHandle, fileMode, fileAccess, cancellationToken);
                     }
                     catch
@@ -293,9 +310,9 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     // OPFSStreamWorkerService will run in the dedicated worker scope
                     _webWorker ??= await WebWorkerService.GetWebWorker();
                     var serviceKey = Guid.NewGuid().ToString();
-                    await _webWorker!.New<IOPFSStreamWorkerService>(serviceKey, () => new OPFSStreamWorkerService());
-                    var fileManager = _webWorker.GetKeyedService<IOPFSStreamWorkerService>(serviceKey);
-                    var ret = new OPFSStream(fileManager);
+                    await _webWorker!.New<IOPFSAsyncSyncAccess>(serviceKey, () => new OPFSAsyncSyncAccess());
+                    var fileManager = _webWorker.GetKeyedService<IOPFSAsyncSyncAccess>(serviceKey);
+                    var ret = new OPFSInPlaceStream(fileManager, false);
                     ret.OnDisposed += async (_) => await InstanceDisposed(serviceKey);
                     WorkerStreams.Add(serviceKey, ret);
                     try
@@ -312,12 +329,12 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 else
                 {
                     // unsupported scope
-                    throw new NotImplementedException($"{nameof(OPFSStream)} unsupported scope {JS.GlobalScope}");
+                    throw new NotImplementedException($"{nameof(OPFSInPlaceStream)} unsupported scope {JS.GlobalScope}");
                 }
             }
             finally
             {
-                if (haveLimtier) _openLimiter.Release();
+                if (haveLimiter) _openLimiter.Release();
             }
         }
         static async Task InstanceDisposed(string serviceKey)
@@ -328,7 +345,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 var removed = WorkerStreams.Remove(serviceKey);
                 if (removed && _webWorker != null)
                 {
-                    await _webWorker.RemoveKeyedService<IOPFSStreamWorkerService>(serviceKey);
+                    await _webWorker.RemoveKeyedService<IOPFSAsyncSyncAccess>(serviceKey);
                 }
             }
             catch
@@ -337,7 +354,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
         }
         private SemaphoreSlim _handleLimiter = new SemaphoreSlim(1);
-        private async Task WithHandle(Func<IOPFSStreamWorkerService, Task> withHandleFn, CancellationToken cancellationToken)
+        private async Task WithHandle(Func<IOPFSAsyncSyncAccess, Task> withHandleFn, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var hasHandle = false;
@@ -352,7 +369,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 if (hasHandle) _handleLimiter.Release();
             }
         }
-        private async Task<TResult> WithHandle<TResult>(Func<IOPFSStreamWorkerService, Task<TResult>> withHandleFn, CancellationToken cancellationToken)
+        private async Task<TResult> WithHandle<TResult>(Func<IOPFSAsyncSyncAccess, Task<TResult>> withHandleFn, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var hasHandle = false;
@@ -384,6 +401,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     _canWrite = true;
                     break;
             }
+            _canWriteSync = _supportSyncAccess && _canWrite;
+            _canReadSync = _supportSyncAccess && _canRead;
             var truncate = false;
             var seekToEnd = false;
             var fileHandle = await root.GetPathFileHandle(path, false);
@@ -444,7 +463,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             {
                 throw new FileNotFoundException();
             }
-            _length = await WithHandle((h) => h.Open(fileHandle, truncate), cancellationToken);
+            _length = await WithHandle((h) => h.OpenAsync(fileHandle, truncate), cancellationToken);
+            IsOpen = true;
             // if FileMode is append seek to the end of the file
             _position = seekToEnd ? _length : 0;
         }
@@ -465,9 +485,16 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     _canWrite = true;
                     break;
             }
+            _canWriteSync = _supportSyncAccess && _canWrite;
+            _canReadSync = _supportSyncAccess && _canRead;
             var truncate = false;
             var seekToEnd = false;
-            var fileHandle = await root.GetFileHandle(name, false);
+            FileSystemFileHandle? fileHandle = null;
+            try
+            {
+                fileHandle = await root.GetFileHandle(name, false);
+            }
+            catch { }
             switch (fileMode)
             {
                 case FileMode.CreateNew:
@@ -525,7 +552,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             {
                 throw new FileNotFoundException();
             }
-            _length = await WithHandle((h) => h.Open(fileHandle, truncate), cancellationToken);
+            _length = await WithHandle((h) => h.OpenAsync(fileHandle, truncate), cancellationToken);
+            IsOpen = true;
             // if FileMode is append seek to the end of the file
             _position = seekToEnd ? _length : 0;
         }
@@ -550,6 +578,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     _canWrite = true;
                     break;
             }
+            _canWriteSync = _supportSyncAccess && _canWrite;
+            _canReadSync = _supportSyncAccess && _canRead;
             var truncate = false;
             var seekToEnd = false;
             switch (fileMode)
@@ -583,7 +613,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                     seekToEnd = true;
                     break;
             }
-            _length = await WithHandle((h) => h.Open(fileHandle, truncate), cancellationToken);
+            _length = await WithHandle((h) => h.OpenAsync(fileHandle, truncate), cancellationToken);
+            IsOpen = true;
             // if FileMode is append seek to the end of the file
             _position = seekToEnd ? _length : 0;
         }
@@ -593,7 +624,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             await WithHandle(async (h) =>
             {
                 if (h == null) return;
-                await h.Flush();
+                await h.FlushAsync();
             }, cancellationToken);
         }
         /// <summary>
@@ -605,15 +636,19 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         {
             if (IsDisposed) return;
             IsDisposed = true;
-            try
+            if (IsOpen)
             {
-                await WithHandle(async (h) =>
+                try
                 {
-                    if (h == null) return;
-                    await h.Close();
-                }, default);
+                    await WithHandle(async (h) =>
+                    {
+                        if (h == null) return;
+                        await h.CloseAsync();
+                    }, default);
+                }
+                catch { }
             }
-            catch { }
+            IsOpen = false;
             try
             {
                 OnDisposed?.Invoke(this);
@@ -622,25 +657,14 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         }
         /// <inheritdoc/>
         public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            return await WithHandle(async (h) =>
-            {
-                if (h == null) throw new Exception("File not open");
-                using var uint8ArrayData = await h.ReadUint8Array(_position, count);
-                using var bufferHeapView = HeapView.Create<byte, Uint8Array>(new ReadOnlyMemory<byte>(buffer, offset, count));
-                bufferHeapView.View.Set(uint8ArrayData);
-                _position = _position + uint8ArrayData.ByteLength;
-                if (_position > _length) _length = _position;
-                return (int)uint8ArrayData.Length;
-            }, cancellationToken);
-        }
+            => await ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken);
         /// <inheritdoc/>
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             return await WithHandle(async (h) =>
             {
                 if (h == null) throw new Exception("File not open");
-                using var uint8ArrayData = await h.ReadUint8Array(_position, buffer.Length);
+                using var uint8ArrayData = await h.ReadUint8ArrayAsync(_position, buffer.Length);
                 using var bufferHeapView = HeapView.Create<byte, Uint8Array>(buffer);
                 bufferHeapView.View.Set(uint8ArrayData);
                 _position = _position + uint8ArrayData.ByteLength;
@@ -655,30 +679,21 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             {
                 if (h == null) throw new Exception("File not open");
                 using var uint8Array = HeapView.CreateCopy<byte, Uint8Array>(buffer);
-                var bytesWritten = await h.WriteUint8Array(uint8Array, _position);
+                var bytesWritten = await h.WriteUint8ArrayAsync(uint8Array, _position);
                 _position = _position + bytesWritten;
                 if (_position > _length) _length = _position;
             }, cancellationToken);
         }
         /// <inheritdoc/>
         public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            await WithHandle(async (h) =>
-            {
-                if (h == null) throw new Exception("File not open");
-                using var uint8Array = HeapView.CreateCopy<byte, Uint8Array>(new ReadOnlyMemory<byte>(buffer, offset, count));
-                var bytesWritten = await h.WriteUint8Array(uint8Array, _position);
-                _position = _position + bytesWritten;
-                if (_position > _length) _length = _position;
-            }, cancellationToken);
-        }
+            => await WriteAsync(new ReadOnlyMemory<byte>(buffer, offset, count), cancellationToken);
         /// <inheritdoc/>
         public override async Task<Uint8Array> ReadUint8ArrayAsync(int count, CancellationToken cancellationToken = default)
         {
             return await WithHandle(async (h) =>
             {
                 if (h == null) throw new Exception("File not open");
-                var uint8Array = await h.ReadUint8Array(_position, count);
+                var uint8Array = await h.ReadUint8ArrayAsync(_position, count);
                 var bytesRead = uint8Array.ByteLength;
                 _position += bytesRead;
                 return uint8Array;
@@ -690,7 +705,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             await WithHandle(async (h) =>
             {
                 if (h == null) throw new Exception("File not open");
-                var bytesWritten = await h.WriteUint8Array(data, _position);
+                var bytesWritten = await h.WriteUint8ArrayAsync(data, _position);
                 _position = _position + bytesWritten;
                 if (_position > _length) _length = _position;
             }, cancellationToken);
@@ -723,7 +738,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             await WithHandle(async (h) =>
             {
                 if (h == null) throw new Exception("File not open");
-                await h.Truncate(value);
+                await h.TruncateAsync(value);
                 _length = value;
             }, cancellationToken);
         }
@@ -731,20 +746,110 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         public override void SetLength(long value)
         {
             if (_handleManager == null) throw new Exception("File not open");
-            Async.Run(async () =>
+            if (_syncAccessHandle == null)
             {
-                try { await SetLengthAsync(value); } catch { }
-            });
+                Async.Run(async () =>
+                {
+                    try { await SetLengthAsync(value); } catch { }
+                });
+            }
+            else
+            {
+                _syncAccessHandle.Truncate(value);
+            }
+        }
+        void ThrowIfNotSyncSupoported()
+        {
+            if (!_supportSyncAccess) throw new NotImplementedException("Sync OPFSInPlaceStream access is only available in dedicated worker scopes");
+            if (_syncAccessHandle == null) throw new NotImplementedException("SyncAccessHandle not available");
         }
         /// <inheritdoc/>
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotImplementedException();
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            ThrowIfNotSyncSupoported();
+            using var heapView = HeapView.Create<byte, Uint8Array>(new ReadOnlyMemory<byte>(buffer, offset, count));
+            var byteCount = _syncAccessHandle!.Write(heapView.View, new FileSystemSyncReadWriteOptions { At = _position });
+            _position += byteCount;
+            _length = _syncAccessHandle!.GetSize();
+        }
         /// <inheritdoc/>
-        public override void WriteUint8Array(Uint8Array data) => throw new NotImplementedException();
+        public override void WriteUint8Array(Uint8Array data)
+        {
+            ThrowIfNotSyncSupoported();
+            var byteCount = _syncAccessHandle!.Write(data, new FileSystemSyncReadWriteOptions { At = _position });
+            _position += byteCount;
+            _length = _syncAccessHandle!.GetSize();
+        }
         /// <inheritdoc/>
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotImplementedException();
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ThrowIfNotSyncSupoported();
+            _length = _syncAccessHandle!.GetSize();
+            var bytesLeft = Math.Max(_length - _position, 0);
+            var bytesToRead = Math.Max(0, Math.Min(bytesLeft, count));
+            using var heapView = HeapView.Create<byte, Uint8Array>(new ReadOnlyMemory<byte>(buffer, offset, (int)bytesToRead));
+            var byteCount = _syncAccessHandle!.Read(heapView.View, new FileSystemSyncReadWriteOptions { At = _position });
+            _position += byteCount;
+            return (int)byteCount;
+        }
         /// <inheritdoc/>
-        public override Uint8Array ReadUint8Array(int count) => throw new NotImplementedException();
+        public override int Read(Span<byte> buffer)
+        {
+            ThrowIfNotSyncSupoported();
+            _length = _syncAccessHandle!.GetSize();
+            var count = buffer.Length;
+            var bytesLeft = Math.Max(_length - _position, 0);
+            var bytesToRead = Math.Max(0, Math.Min(bytesLeft, count));
+            unsafe
+            {
+                fixed (byte* p = buffer)
+                {
+                    var ptr = (IntPtr)p;
+                    using var heapView = new HeapView<byte, Uint8Array>(ptr, bytesToRead);
+                    var byteCount = _syncAccessHandle!.Read(heapView.View, new FileSystemSyncReadWriteOptions { At = _position });
+                    _position += byteCount;
+                    return (int)byteCount;
+                }
+            }
+        }
         /// <inheritdoc/>
-        public override void Flush() => throw new NotImplementedException();
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            ThrowIfNotSyncSupoported();
+            unsafe
+            {
+                fixed (byte* p = buffer)
+                {
+                    var ptr = (IntPtr)p;
+                    using var heapView = new HeapView<byte, Uint8Array>(ptr, buffer.Length);
+                    var byteCount = _syncAccessHandle!.Write(heapView.View, new FileSystemSyncReadWriteOptions { At = _position });
+                    _position += byteCount;
+                    _length = _syncAccessHandle!.GetSize();
+                }
+            }
+        }
+        /// <inheritdoc/>
+        public override Uint8Array ReadUint8Array(int count)
+        {
+            ThrowIfNotSyncSupoported();
+            _length = _syncAccessHandle!.GetSize();
+            var bytesLeft = Math.Max(_length - _position, 0);
+            var bytesToRead = Math.Max(0, Math.Min(bytesLeft, count));
+            var uint8Array = new Uint8Array(bytesToRead);
+            var byteCount = _syncAccessHandle!.Read(uint8Array, new FileSystemSyncReadWriteOptions { At = _position });
+            _position += byteCount;
+            return uint8Array;
+        }
+        /// <inheritdoc/>
+        public override void Flush()
+        {
+            ThrowIfNotSyncSupoported();
+            _syncAccessHandle!.Flush();
+        }
+        /// <inheritdoc/>
+        public override void Close()
+        {
+            _syncAccessHandle?.Close();
+        }
     }
 }

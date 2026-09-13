@@ -1,14 +1,19 @@
 ﻿using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.Toolbox;
 
-namespace SpawnDev.SpawnJS.WebWorkers.OPFS
+namespace SpawnDev.SpawnJS.WebWorkers.OPFS.Worker
 {
     /// <summary>
     /// This can only run in a DedicatedWorkerScope
     /// </summary>
-    public class OPFSStreamWorkerService : IOPFSStreamWorkerService
+    public class OPFSAsyncSyncAccess : IOPFSAsyncSyncAccess
     {
-        static SpawnJSRuntime? JS => SpawnJSRuntime.Instance;
+        private static SpawnJSRuntime? JS => SpawnJSRuntime.Instance;
+        /// <summary>
+        /// Returns the current FileSystemSyncAccessHandle if available
+        /// </summary>
+        public FileSystemSyncAccessHandle? SyncAccessHandle => _syncAccessHandle;
+        FileSystemSyncAccessHandle? _syncAccessHandle = null;
         /// <summary>
         /// The file's current length.<br/>
         /// Returns 0 if the file is not open.
@@ -18,12 +23,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// Returns true if the file is open
         /// </summary>
         public bool IsOpen => _syncAccessHandle != null;
-        FileSystemSyncAccessHandle? _syncAccessHandle = null;
         /// <summary>
         /// Opens the sync handle and returns the file's current size
         /// </summary>
         /// <returns>The file's current size</returns>
-        public async Task<long> Open(FileSystemFileHandle fileHandle, bool truncate)
+        public async Task<long> OpenAsync(FileSystemFileHandle fileHandle, bool truncate)
         {
             if (_syncAccessHandle != null) throw new Exception("Already open");
             if (fileHandle == null)
@@ -43,11 +47,16 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// Opens the sync handle and returns the file's current size
         /// </summary>
         /// <returns>The file's current size</returns>
-        public async Task<long> Open(FileSystemDirectoryHandle root, string name, FileMode fileMode)
+        public async Task<long> OpenAsync(FileSystemDirectoryHandle root, string name, FileMode fileMode)
         {
             if (_syncAccessHandle != null) throw new Exception("Already open");
             // Get handle to draft file
-            var fileHandle = await root.GetFileHandle(name, false);
+            FileSystemFileHandle? fileHandle = null;
+            try
+            {
+                fileHandle = await root.GetFileHandle(name, false);
+            }
+            catch { }
             var truncate = false;
             switch (fileMode)
             {
@@ -119,7 +128,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// Opens the sync handle and returns the file's current size
         /// </summary>
         /// <returns>The file's current size</returns>
-        public async Task<long> Open(string path, FileMode fileMode)
+        public async Task<long> OpenAsync(string path, FileMode fileMode)
         {
             if (_syncAccessHandle != null) throw new Exception("Already open");
             using var navigator = JS!.Get<Navigator>("navigator");
@@ -193,13 +202,19 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             var size = _syncAccessHandle.GetSize();
             return size;
         }
-        public async Task<long> WriteUint8Array([WorkerTransfer] Uint8Array srcBuffer, long destOffset = 0)
+        /// <summary>
+        /// Write data to the file
+        /// </summary>
+        public async Task<long> WriteUint8ArrayAsync([WorkerTransfer] Uint8Array srcBuffer, long destOffset = 0)
         {
             if (_syncAccessHandle == null) throw new Exception("File not open");
             return _syncAccessHandle.Write(srcBuffer, new FileSystemSyncReadWriteOptions { At = destOffset });
         }
+        /// <summary>
+        /// Read data from the file and returns as a Uint8Array
+        /// </summary>
         [return: WorkerTransfer]
-        public async Task<Uint8Array> ReadUint8Array(long srcOffset, long count)
+        public async Task<Uint8Array> ReadUint8ArrayAsync(long srcOffset, long count)
         {
             if (_syncAccessHandle == null) throw new Exception("File not open");
             var size = _syncAccessHandle.GetSize();
@@ -209,8 +224,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             if (count > 0) _syncAccessHandle.Read(destBuffer, new FileSystemSyncReadWriteOptions { At = srcOffset });
             return destBuffer;
         }
+        /// <summary>
+        /// Read data from the file and returns as a Uint8Array
+        /// </summary>
         [return: WorkerTransfer]
-        public async Task<Uint8Array> ReadUint8Array(long srcOffset = 0)
+        public async Task<Uint8Array> ReadUint8ArrayAsync(long srcOffset = 0)
         {
             if (_syncAccessHandle == null) throw new Exception("File not open");
             var size = _syncAccessHandle.GetSize();
@@ -219,22 +237,34 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             if (bytesLeft > 0) _syncAccessHandle.Read(destBuffer, new FileSystemSyncReadWriteOptions { At = srcOffset });
             return destBuffer;
         }
-        public async Task<long> GetSize()
+        /// <summary>
+        /// Returns the file's size
+        /// </summary>
+        public async Task<long> GetSizeAsync()
         {
             if (_syncAccessHandle == null) throw new Exception("File not open");
             return _syncAccessHandle.GetSize();
         }
-        public async Task Truncate(long newSize)
+        /// <summary>
+        /// Truncate the file
+        /// </summary>
+        public async Task TruncateAsync(long newSize)
         {
             if (_syncAccessHandle == null) throw new Exception("File not open");
             _syncAccessHandle.Truncate(newSize);
         }
-        public async Task Flush()
+        /// <summary>
+        /// Flush
+        /// </summary>
+        public async Task FlushAsync()
         {
             if (_syncAccessHandle == null) return;
             _syncAccessHandle.Flush();
         }
-        public async Task<bool> Close()
+        /// <summary>
+        /// Close
+        /// </summary>
+        public async Task<bool> CloseAsync()
         {
             if (_syncAccessHandle == null) return false;
             _syncAccessHandle.Close();

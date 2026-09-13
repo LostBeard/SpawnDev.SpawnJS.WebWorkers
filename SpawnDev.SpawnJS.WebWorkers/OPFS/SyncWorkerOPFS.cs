@@ -19,7 +19,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <summary>
         /// Returns true if OPFSStream.Supported
         /// </summary>
-        public static bool OPFSStreamSupported => OPFSStream.Supported;
+        public static bool OPFSStreamSupported => OPFSInPlaceStream.Supported;
         static SpawnJSRuntime JS => SpawnJSRuntime.Instance;
         static StorageManager? _storage;
         static FileSystemDirectoryHandle? _root;
@@ -42,7 +42,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
             {
-                return await OPFSStream.OpenPath(root, path, fileMode, fileAccess, cancellationToken);
+                return await OPFSInPlaceStream.OpenPath(root, path, fileMode, fileAccess, cancellationToken);
             }
             else
             {
@@ -67,7 +67,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
             {
-                return await OPFSStream.Open(root, name, fileMode, fileAccess, cancellationToken);
+                return await OPFSInPlaceStream.Open(root, name, fileMode, fileAccess, cancellationToken);
             }
             else
             {
@@ -92,7 +92,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
             {
-                return await OPFSStream.Open(fileHandle, fileMode, fileAccess, cancellationToken);
+                return await OPFSInPlaceStream.Open(fileHandle, fileMode, fileAccess, cancellationToken);
             }
             else
             {

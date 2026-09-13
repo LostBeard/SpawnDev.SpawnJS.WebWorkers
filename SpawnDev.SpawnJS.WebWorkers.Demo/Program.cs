@@ -2,10 +2,13 @@ using Microsoft.Extensions.DependencyInjection;
 using SpawnDev;
 using SpawnDev.SpawnJS;
 using SpawnDev.SpawnJS.JSObjects;
+using SpawnDev.SpawnJS.Toolbox;
 using SpawnDev.SpawnJS.WebWorkers;
 using SpawnDev.SpawnJS.WebWorkers.Demo;
 using SpawnDev.SpawnJS.WebWorkers.Demo.Tests;
+using SpawnDev.SpawnJS.WebWorkers.OPFS;
 using System.Net.Http.Json;
+using System.Text;
 
 // .Net Wasm, unlike Blazor, does not come with a built-in dependency injection container.
 // SpawnJSApp is a very minimal DI container that can be used when not using something else.
@@ -32,18 +35,80 @@ builder.Services.AddSingleton<IAsyncCallDispatcherTest, AsyncCallDispatcherTest>
 await builder.Build().RunAsync(async (app) =>
 {
     var webWorkerService = app.Services.GetRequiredService<WebWorkerService>();
-
-    if (JS.IsWindow)
+    JS.Log($"Running:: {JS.GlobalScope}");
+    var bufferSize = 1024 * 1024 * 4;
+    var testSize = 100 * 1024 * 1024;
+    JS.Set("_runTests", async () =>
     {
-        var tester = new AsyncCallDispatcherTest();
-        var worker = await webWorkerService.GetWebWorker();
-        await tester.Test(worker);
-    }
+        if (JS.IsWindow)
+        {
+            JS.Log(">> Window OPFS tests");
+            {
+                //JS.Log(">> OPFSStream test 1 a");
+                //{
+                //    using var streamZ = await OPFSStream.Open("MyFileAsync1.txt", FileMode.Create);
+                //    await AsyncStreamThroughputTester.RunThroughputTestAsync(streamZ, testSize, bufferSize);
+                //}
+                JS.Log(">> AsyncOPFS async test from Window");
+                {
+                    await StreamThroughputTester.RunThroughputTestAsync(
+                        async () => await OPFSStream.Open("MyFileAsync6.txt", FileMode.Create, FileAccess.Write),
+                        async () => await OPFSStream.Open("MyFileAsync6.txt", FileMode.Open, FileAccess.Read),
+                        testSize, bufferSize);
+                }
+                JS.Log(">> OPFSInPlaceStream async test from Window");
+                {
+                    await StreamThroughputTester.RunThroughputTestAsync(
+                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11.txt", FileMode.Create, FileAccess.Write),
+                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11.txt", FileMode.Open, FileAccess.Read),
+                        testSize, bufferSize);
+                }
+            }
+            JS.Log("<< OPFSStream test 1");
+        }
+        else if (JS.IsDedicatedWorkerGlobalScope)
+        {
+            JS.Log(">> OPFS Stream tests in DedicatedWorkerGlobalScope");
+            {
+                JS.Log(">> OPFSStreams async test from DedicatedWorkerGlobalScope");
+                {
+                    await StreamThroughputTester.RunThroughputTestAsync(
+                        async () => await OPFSStream.Open("MyFileAsync678978979.txt", FileMode.Create, FileAccess.Write),
+                        async () => await OPFSStream.Open("MyFileAsync678978979.txt", FileMode.Open, FileAccess.Read),
+                        testSize, bufferSize);
+                }
+                JS.Log(">> OPFSInPlaceStream async test from DedicatedWorkerGlobalScope");
+                {
+                    await StreamThroughputTester.RunThroughputTestAsync(
+                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11789789789.txt", FileMode.Create, FileAccess.Write),
+                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11789789789.txt", FileMode.Open, FileAccess.Read),
+                        testSize, bufferSize);
+                }
+                JS.Log(">> OPFSInPlaceStream sync test from DedicatedWorkerGlobalScope");
+                {
+                    using var streamZ = await OPFSInPlaceStream.Open("MyFileSync78978.txt", FileMode.Create, FileAccess.ReadWrite);
+                    StreamThroughputTester.RunThroughputTest(
+                        () => streamZ, 
+                        () => streamZ,
+                        testSize, bufferSize);
+                }
+                JS.Log(">> OPFSStream sync test from DedicatedWorkerGlobalScope");
+                {
+                    using var streamZ = await OPFSStream.Open("MyFileSync999.txt", FileMode.Create, FileAccess.ReadWrite);
+                    StreamThroughputTester.RunThroughputTest(
+                        () => streamZ,
+                        () => streamZ,
+                        testSize, bufferSize);
+                }
+            }
+            JS.Log("<< OPFSStream test 2");
+        }
+    });
 
     // Run the test suite in the window scope only. Workers load this same Program.cs; they must serve as
     // workers, not re-run the suite. The Playwright TestRunner reads the READY/TEST/RESULTS console lines.
     // `?filter=Name` in the url scopes the run. This mirrors the SpawnJS harness.
-    if (JS.GlobalScope == GlobalScope.Window)
+    if (false && JS.GlobalScope == GlobalScope.Window)
     {
         async void RunIt_OnClick()
         {

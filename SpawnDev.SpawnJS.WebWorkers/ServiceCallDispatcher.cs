@@ -444,7 +444,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                     }
                     var callbackMsg = new object?[] { "callback", requestId, err, retValue };
 #if DEBUG && false
-                    JS.Log("worker.postMessage", new object[] { callbackMsg, transferableList.ToArray() });
+                    JS.Log("HandleCallMessage worker.postMessage", transferableList);
 #endif
                     if (_port != null) _port.PostMessage(callbackMsg, transferableList.ToArray());
                     else _portSimple?.PostMessage(callbackMsg);
@@ -547,6 +547,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             var serviceTypeName = TypeExtensions.GetFullName(serviceType);
             var msgOut = new List<object?> { markedNoReply ? "msgKeyed" : "callKeyed", serviceTypeName, keyTypeName, serviceKey, requestId, targetMethod };
             msgOut.AddRange(msgData);
+#if DEBUG && false
+            JS.Log("CallKeyed worker.postMessage", transferable);
+#endif
             if (_port != null) _port.PostMessage(msgOut, transferable);
             else _portSimple?.PostMessage(msgOut);
             if (markedNoReply)
@@ -613,6 +616,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
             var msgData = PreSerializeArgs(requestId, methodBase, args, out var transferable);
             var msgOut = new List<object?> { markedNoReply ? "msg" : "call", serviceTypeName, requestId, targetMethod };
             msgOut.AddRange(msgData);
+#if DEBUG && false
+            JS.Log("Call worker.postMessage", transferable);
+#endif
             if (_port != null) _port.PostMessage(msgOut, transferable);
             else _portSimple?.PostMessage(msgOut);
             if (markedNoReply)
