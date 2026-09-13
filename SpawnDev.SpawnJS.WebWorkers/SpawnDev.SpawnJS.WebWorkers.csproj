@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.1.15</Version>
-		<PackageReleaseNotes>v2.1.15 - OPFSInPlaceStream</PackageReleaseNotes>
+		<Version>2.1.16</Version>
+		<PackageReleaseNotes>v2.1.16 - OPFSInPlaceStream</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -68,7 +68,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="SpawnDev.SpawnJS" Version="2.1.15" />
+		<PackageReference Include="SpawnDev.SpawnJS" Version="2.1.16" />
 	</ItemGroup>
 	
 	<PropertyGroup>

@@ -37,7 +37,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
                 }
             }
         }
-        public static async Task<Stream> OpenPath(this FileSystemDirectoryHandle root, string path, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
+        public static async Task<Stream> OpenInPlacePathStream(this FileSystemDirectoryHandle root, string path, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
         {
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
@@ -46,23 +46,23 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await root.OpenPathAsyncAccess(path, fileMode, fileAccess, cancellationToken);
+                return await root.OpenPathStream(path, fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
             }
         }
-        public static async Task<Stream> OpenPath(string path, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
+        public static async Task<Stream> OpenInPlacePathStream(string path, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
         {
             if (OperatingSystem.IsBrowser())
             {
                 await Ready;
                 if (_root == null) throw new PlatformNotSupportedException();
-                return await OpenPath(_root, path, fileMode, fileAccess, cancellationToken);
+                return await OpenInPlacePathStream(_root, path, fileMode, fileAccess, cancellationToken);
             }
             else
             {
                 throw new PlatformNotSupportedException();
             }
         }
-        public static async Task<Stream> Open(this FileSystemDirectoryHandle root, string name, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
+        public static async Task<Stream> OpenInPlaceStream(this FileSystemDirectoryHandle root, string name, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
         {
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
@@ -71,23 +71,23 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await root.OpenAsyncAccess(name, fileMode, fileAccess, cancellationToken);
+                return await root.OpenStream(name, fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
             }
         }
-        public static async Task<Stream> Open(string name, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
+        public static async Task<Stream> OpenInPlaceStream(string name, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
         {
             if (OperatingSystem.IsBrowser())
             {
                 await Ready;
                 if (_root == null) throw new PlatformNotSupportedException();
-                return await Open(_root, name, fileMode, fileAccess, cancellationToken);
+                return await OpenInPlaceStream(_root, name, fileMode, fileAccess, cancellationToken);
             }
             else
             {
                 throw new PlatformNotSupportedException();
             }
         }
-        public static async Task<Stream> Open(this FileSystemFileHandle fileHandle, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
+        public static async Task<Stream> OpenInPlaceStream(this FileSystemFileHandle fileHandle, FileMode fileMode = FileMode.Open, FileAccess fileAccess = FileAccess.Read, CancellationToken cancellationToken = default)
         {
             if (!OperatingSystem.IsBrowser()) throw new PlatformNotSupportedException();
             if (OPFSStreamEnabled)
@@ -96,7 +96,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             }
             else
             {
-                return await fileHandle.OpenAsyncAccess(fileMode, fileAccess, cancellationToken);
+                return await fileHandle.OpenStream(fileMode, fileAccess, OPFSSyncMode.Auto, cancellationToken);
             }
         }
     }
