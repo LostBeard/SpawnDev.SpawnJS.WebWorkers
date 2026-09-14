@@ -34,6 +34,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
         public async Task SubtleDigest_PerLeafVsWhole_BoundsTheBatchedPrimitive()
         {
             var report = await SubtleDigestCostProbe.RunAsync();
+            throw new Exception("DIGEST-COST || " + report);
 
             // The property the whole argument rests on: per-leaf hashing must cost materially more than
             // hashing the same bytes in one call. If that ever stops being true, the batched primitive has
