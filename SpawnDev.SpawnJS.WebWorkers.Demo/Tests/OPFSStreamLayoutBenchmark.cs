@@ -12,10 +12,18 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
     /// <remarks>
     /// <para>
     /// 🔴 WHY HERE AND NOT IN SpawnDev.WebTorrent. <c>createSyncAccessHandle</c> exists ONLY in a
-    /// DedicatedWorkerGlobalScope, so the fast path can only be measured from inside a worker. WebTorrent
-    /// deliberately does not depend on SpawnDev.SpawnJS.WebWorkers - it runs in desktop apps too - so the
-    /// measurement lives in the repo that already has a worker harness. Nothing here needs WebTorrent:
-    /// <see cref="OPFSStream"/> is plain SpawnJS.
+    /// DedicatedWorkerGlobalScope, so the fast path can only be measured from inside a worker - and
+    /// WebTorrent's test host has no way to execute test code in one. That is a HARNESS limitation, not a
+    /// library one: WebTorrent uses sync handles perfectly well whenever its host runs it in a worker
+    /// (<c>AsyncFSChunkStore.GetSyncHandleAsync</c> tries, and falls back permanently if it throws). Using
+    /// the API is not the same as creating the worker, and an earlier version of this comment conflated
+    /// the two. Nothing here needs WebTorrent: <see cref="OPFSStream"/> is plain SpawnJS.
+    /// <para>
+    /// ⚠️ AND FOR A P2P TORRENT THAT WORKER DOES NOT EXIST. WebTorrent's peer transport is WebRTC and
+    /// <c>RTCPeerConnection</c> is Window-scope, so any torrent with real peers never sees a sync handle
+    /// at all. These sync-path numbers therefore describe the lazy-hash / web-seed case (peer-free over
+    /// HTTP, worker-hostable); the Blob column is what a P2P torrent actually gets.
+    /// </para>
     /// </para>
     /// <para>
     /// ⭐ THE CONFIGS MATCH THE BLOB-PATH RUN EXACTLY (1024/256/64/16 entries, constant 64 MiB), so the two
