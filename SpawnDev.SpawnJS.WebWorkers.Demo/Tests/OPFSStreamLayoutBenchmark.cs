@@ -100,17 +100,24 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             // ONE payload, reused for every write. Allocated JS-side and never marshalled.
             using var payload = new Uint8Array(bytes);
 
-            // ── write both layouts (not timed: this measures READ, the model-load path) ──
+            // ── write both layouts. TIMED, because an "unpack after 100%" pass is exactly this: read every
+            // chunk and write it into a content file. Its cost decides whether a one-time unpack is cheap.
+            var chunkWrite = new Stopwatch();
+            var wholeWrite = new Stopwatch();
+            chunkWrite.Start();
             for (var i = 0; i < count; i++)
             {
                 await using var w = await OPFSStream.OpenPath(
                     $"{chunkDir}/{i}.bin", FileMode.Create, FileAccess.Write);
                 await w.WriteUint8ArrayAsync(payload);
             }
+            chunkWrite.Stop();
+            wholeWrite.Start();
             {
                 await using var w = await OPFSStream.OpenPath(wholePath, FileMode.Create, FileAccess.Write);
                 for (var i = 0; i < count; i++) await w.WriteUint8ArrayAsync(payload);
             }
+            wholeWrite.Stop();
 
             // ── read: chunk-per-file, one OPEN per entry ──
             var chunkOpen = new Stopwatch();
@@ -162,7 +169,11 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
                  + $"[{chunkOpen.Elapsed.TotalMilliseconds / count:F2}/entry] + read {chunkRead.Elapsed.TotalMilliseconds:F0}) "
                  + $"| whole {wholeTotal:F0} ms (open {wholeOpen.Elapsed.TotalMilliseconds:F1} + read {wholeRead.Elapsed.TotalMilliseconds:F0}) "
                  + $"| ratio {(wholeTotal > 0 ? chunkTotal / wholeTotal : 0):F2}x "
-                 + $"| whole-read {thru:F0} MB/s | bytes {chunkBytes}/{wholeBytes}";
+                 + $"| whole-read {thru:F0} MB/s | bytes {chunkBytes}/{wholeBytes} "
+                 + $"|| WRITE chunk {chunkWrite.Elapsed.TotalMilliseconds:F0} ms "
+                 + $"({mb / (chunkWrite.Elapsed.TotalMilliseconds / 1000.0):F0} MB/s) "
+                 + $"whole {wholeWrite.Elapsed.TotalMilliseconds:F0} ms "
+                 + $"({mb / (wholeWrite.Elapsed.TotalMilliseconds / 1000.0):F0} MB/s)";
             return (line, thru);
         }
     }
