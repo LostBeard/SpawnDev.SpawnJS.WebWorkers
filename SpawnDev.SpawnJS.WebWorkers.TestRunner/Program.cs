@@ -8,24 +8,38 @@ using System.Text.RegularExpressions;
 //   dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- Serialization     run tests whose name contains "Serialization"
 //   dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- --headed          watch it in a real browser window
 //   dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- --url http://...  use an already running dev server
+//   dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- --debug           test THIS WORKING TREE (see below)
 //
 // Exit code is the number of failed tests, so it is usable as a gate.
+//
+// 🔴 WHICH BITS DOES A RUN ACTUALLY TEST? The Demo swaps its reference by configuration:
+//   Release -> PackageReference to the PUBLISHED SpawnDev.SpawnJS.WebWorkers package
+//   Debug   -> ProjectReference to ..\SpawnDev.SpawnJS.WebWorkers (this working tree)
+// Release is the default because it is the shipping configuration, but it means an edit to the library
+// is SILENTLY ignored by a default run - the suite builds and passes against bits you did not write.
+// Use --debug to exercise local library changes. The configuration is printed on every run so a result
+// can never be misread later.
 
 var filter = "";
 var headed = false;
 var externalUrl = "";
 var verbose = false;
+var configuration = "Release";
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
         case "--headed": headed = true; break;
         case "--verbose": verbose = true; break;
+        case "--debug": configuration = "Debug"; break;
+        case "--config": configuration = ++i < args.Length ? args[i] : "Release"; break;
         case "--url": externalUrl = ++i < args.Length ? args[i] : ""; break;
         case "--filter": filter = ++i < args.Length ? args[i] : ""; break;
         case "-h":
         case "--help":
-            Console.WriteLine("usage: [filter] [--filter <text>] [--headed] [--verbose] [--url <url>]");
+            Console.WriteLine("usage: [filter] [--filter <text>] [--headed] [--verbose] [--debug] [--config <name>] [--url <url>]");
+            Console.WriteLine("  --debug  build the Demo in Debug, which references the library by project (tests YOUR edits).");
+            Console.WriteLine("           The default Release build references the PUBLISHED package instead.");
             return 0;
         default:
             if (!args[i].StartsWith("-")) filter = args[i];
@@ -47,14 +61,16 @@ try
 {
     if (string.IsNullOrEmpty(url))
     {
-        (server, url) = await StartServerAsync(demoProject);
+        (server, url) = await StartServerAsync(demoProject, configuration);
         if (string.IsNullOrEmpty(url))
         {
             Console.Error.WriteLine("Dev server did not report an app url");
             return 1;
         }
     }
-    var target = string.IsNullOrEmpty(filter) ? url : $"{url.TrimEnd('/')}/?filter={Uri.EscapeDataString(filter)}";
+    // Always request the suite with ?tests=[filter], even when the filter is empty. The Demo is also a
+    // scratch host and must not decide for itself whether the suite runs. Empty value runs everything.
+    var target = $"{url.TrimEnd('/')}/?tests={Uri.EscapeDataString(filter)}";
     return await RunAsync(target, headed, verbose);
 }
 finally
@@ -77,10 +93,16 @@ static string FindRepoRoot()
     return Directory.GetCurrentDirectory();
 }
 
-static async Task<(Process?, string)> StartServerAsync(string demoProject)
+static async Task<(Process?, string)> StartServerAsync(string demoProject, string configuration)
 {
-    Console.WriteLine("building and starting SpawnDev.SpawnJS.WebWorkers.Demo...");
-    var psi = new ProcessStartInfo("dotnet", $"run -c Release --project \"{demoProject}\"")
+    // Say which bits are under test, every run. A Release run exercises the PUBLISHED package, so a
+    // passing result says nothing about uncommitted library edits - that has cost real debugging time.
+    var testing = configuration == "Debug"
+        ? "this working tree (ProjectReference)"
+        : "the PUBLISHED package (PackageReference) - local library edits are NOT included";
+    Console.WriteLine($"building and starting SpawnDev.SpawnJS.WebWorkers.Demo [{configuration}]");
+    Console.WriteLine($"  testing: {testing}");
+    var psi = new ProcessStartInfo("dotnet", $"run -c {configuration} --project \"{demoProject}\"")
     {
         RedirectStandardOutput = true,
         RedirectStandardError = true,

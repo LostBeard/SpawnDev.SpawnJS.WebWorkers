@@ -12,12 +12,11 @@ public static class StreamThroughputTester
     /// <param name="getReadStream">The read Stream getter for the test.</param>
     /// <param name="testSizeInBytes">Total amount of data to process (e.g., 50 * 1024 * 1024 for 50MB).</param>
     /// <param name="bufferSize">The size of the block chunk used for reading and writing (e.g., 4096 or 65536).</param>
-    public static void RunThroughputTest(Func<Stream> getWriteStream, Func<Stream> getReadStream, long testSizeInBytes = 100 * 1024 * 1024, int bufferSize = 1024 * 1024 * 4)
+    public static async Task RunThroughputTest(Func<Task<Stream>> getWriteStream, Func<Task<Stream>> getReadStream, long testSizeInBytes = 100 * 1024 * 1024, int bufferSize = 1024 * 1024 * 4)
     {
-        var stream = getWriteStream();
+        var stream = await getWriteStream();
         if (stream == null) throw new ArgumentNullException(nameof(stream));
         if (!stream.CanWrite) throw new InvalidOperationException("The provided stream does not support writing.");
-        if (!stream.CanRead) throw new InvalidOperationException("The provided stream does not support reading.");
         if (!stream.CanSeek) throw new InvalidOperationException("The stream must support seeking to reset between write and read tests.");
 
         // Initialize a dummy buffer populated with random bytes to prevent OS compression optimization
@@ -47,7 +46,7 @@ public static class StreamThroughputTester
         double writeMbps = (bytesWritten / (1024.0 * 1024.0)) / writeSeconds;
         Console.WriteLine($"Write Speed: {writeMbps:F2} MB/s (Took {writeSeconds:F4} seconds)");
 
-        stream = getReadStream();
+        stream = await getReadStream();
         if (stream == null) throw new ArgumentNullException(nameof(stream));
         if (!stream.CanRead) throw new InvalidOperationException("The provided stream does not support reading.");
         if (!stream.CanSeek) throw new InvalidOperationException("The stream must support seeking to reset between write and read tests.");

@@ -36,79 +36,21 @@ await builder.Build().RunAsync(async (app) =>
 {
     var webWorkerService = app.Services.GetRequiredService<WebWorkerService>();
     JS.Log($"Running:: {JS.GlobalScope}");
-    var bufferSize = 1024 * 1024 * 4;
-    var testSize = 100 * 1024 * 1024;
     JS.Set("_runTests", async () =>
     {
-        if (JS.IsWindow)
-        {
-            JS.Log(">> Window OPFS tests");
-            {
-                //JS.Log(">> OPFSStream test 1 a");
-                //{
-                //    using var streamZ = await OPFSStream.Open("MyFileAsync1.txt", FileMode.Create);
-                //    await AsyncStreamThroughputTester.RunThroughputTestAsync(streamZ, testSize, bufferSize);
-                //}
-                JS.Log(">> AsyncOPFS async test from Window");
-                {
-                    await StreamThroughputTester.RunThroughputTestAsync(
-                        async () => await OPFSStream.Open("MyFileAsync6.txt", FileMode.Create, FileAccess.Write),
-                        async () => await OPFSStream.Open("MyFileAsync6.txt", FileMode.Open, FileAccess.Read),
-                        testSize, bufferSize);
-                }
-                JS.Log(">> OPFSInPlaceStream async test from Window");
-                {
-                    await StreamThroughputTester.RunThroughputTestAsync(
-                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11.txt", FileMode.Create, FileAccess.Write),
-                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11.txt", FileMode.Open, FileAccess.Read),
-                        testSize, bufferSize);
-                }
-            }
-            JS.Log("<< OPFSStream test 1");
-        }
-        else if (JS.IsDedicatedWorkerGlobalScope)
-        {
-            JS.Log(">> OPFS Stream tests in DedicatedWorkerGlobalScope");
-            {
-                JS.Log(">> OPFSStreams async test from DedicatedWorkerGlobalScope");
-                {
-                    await StreamThroughputTester.RunThroughputTestAsync(
-                        async () => await OPFSStream.Open("MyFileAsync678978979.txt", FileMode.Create, FileAccess.Write),
-                        async () => await OPFSStream.Open("MyFileAsync678978979.txt", FileMode.Open, FileAccess.Read),
-                        testSize, bufferSize);
-                }
-                JS.Log(">> OPFSInPlaceStream async test from DedicatedWorkerGlobalScope");
-                {
-                    await StreamThroughputTester.RunThroughputTestAsync(
-                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11789789789.txt", FileMode.Create, FileAccess.Write),
-                        async () => await OPFSInPlaceStream.OpenPath("MyFileAsync11789789789.txt", FileMode.Open, FileAccess.Read),
-                        testSize, bufferSize);
-                }
-                JS.Log(">> OPFSInPlaceStream sync test from DedicatedWorkerGlobalScope");
-                {
-                    using var streamZ = await OPFSInPlaceStream.Open("MyFileSync78978.txt", FileMode.Create, FileAccess.ReadWrite);
-                    StreamThroughputTester.RunThroughputTest(
-                        () => streamZ, 
-                        () => streamZ,
-                        testSize, bufferSize);
-                }
-                JS.Log(">> OPFSStream sync test from DedicatedWorkerGlobalScope");
-                {
-                    using var streamZ = await OPFSStream.Open("MyFileSync999.txt", FileMode.Create, FileAccess.ReadWrite);
-                    StreamThroughputTester.RunThroughputTest(
-                        () => streamZ,
-                        () => streamZ,
-                        testSize, bufferSize);
-                }
-            }
-            JS.Log("<< OPFSStream test 2");
-        }
+        // Run the test in the window
+        await OPFSTest.Run();
+        // Run the test in a dedicated worker
+        using var worker = await webWorkerService.GetWebWorker();
+        await worker!.Run(() => OPFSTest.Run());
     });
 
     // Run the test suite in the window scope only. Workers load this same Program.cs; they must serve as
     // workers, not re-run the suite. The Playwright TestRunner reads the READY/TEST/RESULTS console lines.
-    // `?filter=Name` in the url scopes the run. This mirrors the SpawnJS harness.
-    if (false && JS.GlobalScope == GlobalScope.Window)
+    // `?tests=[Name]` in the url both REQUESTS the suite and scopes it. This mirrors the SpawnJS harness.
+    // Driven by the url, never by a literal here, so scratch edits in this file cannot silently disable
+    // the suite - see WebWorkerTestSuiteRunner.SuiteRequested.
+    if (WebWorkerTestSuiteRunner.SuiteRequested() && JS.GlobalScope == GlobalScope.Window)
     {
         async void RunIt_OnClick()
         {
@@ -142,3 +84,40 @@ await builder.Build().RunAsync(async (app) =>
         await WebWorkerTestSuiteRunner.RunAllAsync(app.Services, WebWorkerTestSuiteRunner.FilterFromLocation());
     }
 });
+
+public static class OPFSTest
+{
+    static SpawnJSRuntime JS => SpawnJSRuntime.Instance;
+    public static async Task Run()
+    {
+        using var navigator = JS.Get<Navigator>("navigator");
+        using var storage = navigator.Storage;
+        using var root = await storage.GetDirectory();
+        var bufferSize = 1024 * 1024 * 4;
+        var testSize = 100 * 1024 * 1024;
+
+        JS.Log($">> OPFSStream async test from {JS.GlobalScope}");
+        {
+            var filename = "MyFileAsync6.txt";
+            await StreamThroughputTester.RunThroughputTestAsync(
+                async () => await OPFSStream.Open(filename, FileMode.Create, FileAccess.Write),
+                async () => await OPFSStream.Open(filename, FileMode.Open, FileAccess.Read),
+                testSize, bufferSize);
+
+            try { await root.RemoveEntry(filename); } catch { }
+        }
+        if (JS.IsDedicatedWorkerGlobalScope)
+        {
+            JS.Log($">> OPFSStream sync test from {JS.GlobalScope}");
+            {
+                var filename = "MyFileAsync67.txt";
+                await StreamThroughputTester.RunThroughputTest(
+                    async () => await OPFSStream.Open(filename, FileMode.Create, FileAccess.Write, OPFSFileOptions.SyncRequired),
+                    async () => await OPFSStream.Open(filename, FileMode.Open, FileAccess.Read, OPFSFileOptions.SyncRequired),
+                    testSize, bufferSize);
+
+                try { await root.RemoveEntry(filename); } catch { }
+            }
+        }
+    }
+}

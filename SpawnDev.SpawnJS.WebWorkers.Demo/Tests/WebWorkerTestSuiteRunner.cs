@@ -23,6 +23,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
         {
             typeof(WebWorkerSerializationTests),
             typeof(WebWorkerRoundTripTests),
+            typeof(OPFSInPlaceConcurrencyTests),
         };
 
         /// <summary>
@@ -119,9 +120,33 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
         }
 
         /// <summary>
-        /// Reads the `filter` query string value from the page url, if any
+        /// Whether the harness asked for the suite, via <c>?tests=[filter]</c> on the page url.
+        /// <para>
+        /// 🔴 THE SUITE MUST BE DRIVEN BY THE URL, NEVER BY A LITERAL IN Program.cs. This demo is also a
+        /// scratch host, and the suite call sat behind an <c>if (false &amp;&amp; ...)</c> left over from
+        /// unrelated work. Nothing reported that: the harness printed only
+        /// <c>TIMED OUT - the suite never reported a summary</c>, with zero <c>TEST:</c> lines and no clue
+        /// as to why. The SpawnJS demo had the identical defect on the same day, in the form of a bare
+        /// <c>return</c> above its suite call.
+        /// </para>
+        /// <para>
+        /// Keying off the url serves both callers: a plain F5 runs no suite and leaves the page free for
+        /// scratch work, while the harness always gets it.
+        /// </para>
+        /// </summary>
+        public static bool SuiteRequested() => QueryValue("tests") != null;
+
+        /// <summary>
+        /// Reads the test-name filter the harness asked for. Empty (but present) means run everything.
         /// </summary>
         public static string? FilterFromLocation()
+        {
+            var value = QueryValue("tests");
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>Reads a query string value from the page url, or null when the key is absent.</summary>
+        static string? QueryValue(string key)
         {
             var JS = SpawnJSRuntime.Instance;
             if (JS == null) return null;
@@ -130,7 +155,8 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             foreach (var pair in search.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
             {
                 var parts = pair.Split('=', 2);
-                if (parts.Length == 2 && parts[0] == "filter") return Uri.UnescapeDataString(parts[1]);
+                if (parts[0] != key) continue;
+                return parts.Length == 2 ? Uri.UnescapeDataString(parts[1]) : "";
             }
             return null;
         }

@@ -625,6 +625,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
             {
                 if (h == null) return;
                 await h.FlushAsync();
+                _length = await h.GetSizeAsync();
             }, cancellationToken);
         }
         /// <summary>
@@ -658,31 +659,102 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <inheritdoc/>
         public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
             => await ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken);
-        /// <inheritdoc/>
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        // ── Positional (offset-taking) access ──────────────────────────────────────────────────────────
+        //
+        // The offset comes from the CALLER, so nothing about this stream's cursor can affect where an
+        // operation lands. FileSystemSyncAccessHandle is natively positional - read/write(buf, {at}), no
+        // cursor of its own - so these map straight onto it. `Position` is a Stream-shaped abstraction
+        // layered on top, and `Seek`-then-operate is TWO steps; WithHandle awaits a semaphore before the
+        // operation runs, so a second caller on the SAME stream is guaranteed a suspension point between
+        // them.
+        //
+        // MEASURED against the shipped package, before these overloads existed, by driving one stream from
+        // several callers at once (OPFSInPlaceConcurrencyTests, real stream, one file):
+        //   block 1 at offset 65536: byte 0 is 0x00, expected 0x02
+        //   read of block 0 during a write to the last block: byte 0 is 0x00, expected 0xAA
+        // Wrong bytes on disk, no exception raised.
+        //
+        // ⚠️ THAT IS NOT AN ARGUMENT FOR SHARING ONE STREAM. It was written as one, and TJ rejected the
+        // design: "maybe 1 stream total per file is a bad idea. Stream is not shaped for it." A cursor is
+        // per-reader state, so a shared Position has no coherent value to hold - the correct arrangement
+        // is ONE STREAM PER CONSUMER. That costs nothing extra, because OPFSAsyncSyncAccess opens with
+        // Mode = "readwrite-unsafe" and each stream therefore gets its OWN sync handle on the same file.
+        //
+        // These overloads earn their place anyway: a torrent store already addresses by absolute offset,
+        // so it wants no seek and one round trip instead of two. Prefer them over Seek-then-operate for
+        // any offset-addressed caller, and use them if you do share a stream - but do not share one.
+
+        /// <summary>
+        /// Reads <paramref name="count"/> bytes starting at <paramref name="offset"/> without touching
+        /// <see cref="Position"/>. Safe to call concurrently with other positional reads and writes on the
+        /// same stream.
+        /// </summary>
+        /// <param name="offset">Absolute byte offset to read from.</param>
+        /// <param name="count">Number of bytes to read. Fewer are returned at end of file.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The bytes read, as a <see cref="Uint8Array"/> the caller owns and must dispose.</returns>
+        [return: WorkerTransfer]
+        public async Task<Uint8Array> ReadUint8ArrayAtAsync(long offset, long count, CancellationToken cancellationToken = default)
         {
             return await WithHandle(async (h) =>
             {
                 if (h == null) throw new Exception("File not open");
-                using var uint8ArrayData = await h.ReadUint8ArrayAsync(_position, buffer.Length);
-                using var bufferHeapView = HeapView.Create<byte, Uint8Array>(buffer);
-                bufferHeapView.View.Set(uint8ArrayData);
-                _position = _position + uint8ArrayData.ByteLength;
-                if (_position > _length) _length = _position;
-                return (int)uint8ArrayData.Length;
+                return await h.ReadUint8ArrayAsync(offset, count);
             }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Writes <paramref name="data"/> at <paramref name="offset"/> without touching
+        /// <see cref="Position"/>. Safe to call concurrently with other positional reads and writes on the
+        /// same stream.
+        /// </summary>
+        /// <param name="data">The bytes to write. Stays JS-side; never crosses the managed heap.</param>
+        /// <param name="offset">Absolute byte offset to write at.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>The number of bytes written.</returns>
+        public async Task<long> WriteUint8ArrayAtAsync([WorkerTransfer] Uint8Array data, long offset, CancellationToken cancellationToken = default)
+        {
+            return await WithHandle(async (h) =>
+            {
+                if (h == null) throw new Exception("File not open");
+                var bytesWritten = await h.WriteUint8ArrayAsync(data, offset);
+                // Monotonic: a concurrent write to a lower offset must never shrink the recorded length.
+                var end = offset + bytesWritten;
+                if (end > _length) _length = end;
+                return bytesWritten;
+            }, cancellationToken);
+        }
+
+        // ── Cursor-based access ────────────────────────────────────────────────────────────────────────
+        //
+        // ⚠️ Every one of these captures Position SYNCHRONOUSLY, before awaiting anything, then delegates
+        // to the positional API. That makes `Seek(x); await Op(...)` atomic with respect to another
+        // caller's Seek, which the previous shape - reading _position inside the WithHandle lambda, after
+        // the semaphore await - was not.
+        //
+        // ⚠️ It does NOT make the CURSOR itself shared-safe, and cannot: two callers advancing one
+        // Position have no coherent answer. Concurrent callers must use the positional overloads above.
+        // What is guaranteed here is that each operation acts on the offset its own Seek named.
+
+        /// <inheritdoc/>
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var at = _position;
+            using var uint8ArrayData = await ReadUint8ArrayAtAsync(at, buffer.Length, cancellationToken);
+            using var bufferHeapView = HeapView.Create<byte, Uint8Array>(buffer);
+            bufferHeapView.View.Set(uint8ArrayData);
+            _position = at + uint8ArrayData.ByteLength;
+            if (_position > _length) _length = _position;
+            return (int)uint8ArrayData.Length;
         }
         /// <inheritdoc/>
         public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            await WithHandle(async (h) =>
-            {
-                if (h == null) throw new Exception("File not open");
-                using var uint8Array = HeapView.CreateCopy<byte, Uint8Array>(buffer);
-                var bytesWritten = await h.WriteUint8ArrayAsync(uint8Array, _position);
-                _position = _position + bytesWritten;
-                if (_position > _length) _length = _position;
-            }, cancellationToken);
+            var at = _position;
+            using var uint8Array = HeapView.CreateCopy<byte, Uint8Array>(buffer);
+            var bytesWritten = await WriteUint8ArrayAtAsync(uint8Array, at, cancellationToken);
+            _position = at + bytesWritten;
+            if (_position > _length) _length = _position;
         }
         /// <inheritdoc/>
         public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -690,25 +762,18 @@ namespace SpawnDev.SpawnJS.WebWorkers.OPFS
         /// <inheritdoc/>
         public override async Task<Uint8Array> ReadUint8ArrayAsync(int count, CancellationToken cancellationToken = default)
         {
-            return await WithHandle(async (h) =>
-            {
-                if (h == null) throw new Exception("File not open");
-                var uint8Array = await h.ReadUint8ArrayAsync(_position, count);
-                var bytesRead = uint8Array.ByteLength;
-                _position += bytesRead;
-                return uint8Array;
-            }, cancellationToken);
+            var at = _position;
+            var uint8Array = await ReadUint8ArrayAtAsync(at, count, cancellationToken);
+            _position = at + uint8Array.ByteLength;
+            return uint8Array;
         }
         /// <inheritdoc/>
         public override async Task WriteUint8ArrayAsync(Uint8Array data, CancellationToken cancellationToken = default)
         {
-            await WithHandle(async (h) =>
-            {
-                if (h == null) throw new Exception("File not open");
-                var bytesWritten = await h.WriteUint8ArrayAsync(data, _position);
-                _position = _position + bytesWritten;
-                if (_position > _length) _length = _position;
-            }, cancellationToken);
+            var at = _position;
+            var bytesWritten = await WriteUint8ArrayAtAsync(data, at, cancellationToken);
+            _position = at + bytesWritten;
+            if (_position > _length) _length = _position;
         }
         /// <inheritdoc/>
         public override long Seek(long offset, SeekOrigin origin)
