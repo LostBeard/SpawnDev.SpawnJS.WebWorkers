@@ -29,6 +29,17 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
     /// the irreducible cost. It bounds it from below, which is the direction that matters when deciding
     /// whether a change is worth making: if the ceiling on savings is already small, stop.
     /// </para>
+    /// <para>
+    /// ⛔ DO NOT ADD A .NET HASHING ARM HERE. One was added and removed on 2026-09-14. This harness runs
+    /// under <c>dotnet run</c>, which is a BUILD - no relink, no wasm-opt - so .NET measures ~3 MB/s here
+    /// against ~68 MB/s published, while SubtleCrypto is native browser code and measures the same in
+    /// either. An unpublished build therefore does not scale both arms, it DISTORTS THE RATIO, and that
+    /// error already produced a retracted "500x" claim. The authoritative .NET-vs-SubtleCrypto comparison
+    /// lives in SpawnDev.WebTorrent's PMT suite, which PUBLISHES:
+    /// PieceHashEngine_BrowserThroughput_StaysAboveItsRegressionFloor and
+    /// PieceHashEngine_V2LeafShape_DotNetVsSubtleCrypto. Everything measured HERE is browser-native and
+    /// build-independent, which is why it is trustworthy here.
+    /// </para>
     /// </remarks>
     public static class SubtleDigestCostProbe
     {
@@ -95,33 +106,6 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
                 foreach (var v in views) v.Dispose();
             }
 
-            // ── THE .NET ALTERNATIVE (TJ): marshal the piece in and hash it here instead ──
-            //
-            // The JS-side hashing exists to avoid a copy into .NET. That is a MEANS, not the goal - if
-            // copying in and hashing here beats 256 JS digest calls, the copy is necessary rather than
-            // wasteful. Unknown going in: .NET SHA-256 under WASM has no SHA-NI, so its raw rate could be
-            // far below SubtleCrypto's 1600 MB/s and sink the idea outright. Measured, not assumed.
-            double marshal = double.MaxValue, netPerLeaf = double.MaxValue, netWhole = double.MaxValue;
-            byte[]? managed = null;
-            for (var round = 0; round < Rounds; round++)
-            {
-                var sw2 = Stopwatch.StartNew();
-                managed = piece.ReadBytes();                       // JS -> .NET, the whole 4 MiB
-                marshal = Math.Min(marshal, sw2.Elapsed.TotalMilliseconds);
-
-                sw2.Restart();
-                var digests = new byte[leaves][];
-                for (var i = 0; i < leaves; i++)
-                    digests[i] = SHA256.HashData(managed.AsSpan(i * LeafBytes, LeafBytes));
-                netPerLeaf = Math.Min(netPerLeaf, sw2.Elapsed.TotalMilliseconds);
-
-                sw2.Restart();
-                _ = SHA256.HashData(managed);                      // reference: one call, same bytes
-                netWhole = Math.Min(netWhole, sw2.Elapsed.TotalMilliseconds);
-            }
-            if (managed == null || managed.Length != PieceBytes)
-                throw new Exception($"marshalled {managed?.Length ?? -1} bytes, expected {PieceBytes}");
-
             if (hashedBytes != (long)PieceBytes * Rounds)
                 throw new Exception($"hashed {hashedBytes} bytes, expected {(long)PieceBytes * Rounds}");
 
@@ -129,14 +113,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             // The ceiling on what a batched JS-side primitive could recover: everything the per-leaf shape
             // costs, minus the one-call floor. It cannot remove SHA-256 itself.
             var ceiling = perLeaf + setLoop - whole;
-            var netTotal = marshal + netPerLeaf;
-            var jsTotal = perLeaf + setLoop;
             return $"scope={JS.GlobalScopeName} piece={mb:F0}MB leaves={leaves} (best of {Rounds}) || "
-                 + $"DOTNET marshal {marshal:F1} ms ({mb / (marshal / 1000.0):F0} MB/s) + perLeafHash "
-                 + $"{netPerLeaf:F1} ms ({mb / (netPerLeaf / 1000.0):F0} MB/s) = {netTotal:F1} ms "
-                 + $"[wholeHash {netWhole:F1} ms] | JS path {jsTotal:F1} ms | "
-                 + $"DOTNET IS {(netTotal < jsTotal ? "FASTER" : "SLOWER")} by {Math.Abs(jsTotal - netTotal):F1} ms "
-                 + $"({(netTotal > 0 ? jsTotal / netTotal : 0):F2}x) || "
                  + $"wholeDigest {whole:F1} ms ({mb / (whole / 1000.0):F0} MB/s, 1 call) | "
                  + $"perLeaf {perLeaf:F1} ms ({leaves} calls) | "
                  + $"digestCallsOnly {preSliced:F1} ms | subArrayOnly {sliceOnly:F1} ms | "
