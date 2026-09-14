@@ -24,6 +24,7 @@ namespace SpawnDev.SpawnJS.WebWorkers.Demo.Tests
             typeof(WebWorkerSerializationTests),
             typeof(WebWorkerRoundTripTests),
             typeof(OPFSInPlaceConcurrencyTests),
+            typeof(OPFSStreamLayoutTests),
         };
 
         /// <summary>
