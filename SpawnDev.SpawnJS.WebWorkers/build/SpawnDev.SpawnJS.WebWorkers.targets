@@ -1,5 +1,37 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+	<!-- Stamp [assembly: SpawnJSWebWorkersBlazor(true)] into Blazor WASM apps so
+	     WebWorkerService.IsBlazorApp reads true at runtime and workers boot via
+	     spawndev.spawnjs.webworkers.js (faux-env + Blazor.start) instead of main.classic.js. -->
+	<Target Name="SpawnJSWebWorkersGenerateBlazorAttribute"
+			BeforeTargets="CoreCompile"
+			Condition="'$(SpawnJSWebWorkersBlazor)' == 'true' AND '$(OutputType)' == 'Exe'">
+		<PropertyGroup>
+			<_SpawnJSWebWorkersBlazorAttrFile>$(IntermediateOutputPath)SpawnJSWebWorkersBlazor.g.cs</_SpawnJSWebWorkersBlazorAttrFile>
+		</PropertyGroup>
+		<ItemGroup>
+			<_SpawnJSWebWorkersBlazorAttrLines Include="// &lt;auto-generated&gt; by SpawnDev.SpawnJS.WebWorkers build targets - do not edit." />
+			<_SpawnJSWebWorkersBlazorAttrLines Include="[assembly: SpawnDev.SpawnJS.WebWorkers.SpawnJSWebWorkersBlazor(true)]" />
+		</ItemGroup>
+		<WriteLinesToFile File="$(_SpawnJSWebWorkersBlazorAttrFile)"
+						  Lines="@(_SpawnJSWebWorkersBlazorAttrLines)"
+						  Overwrite="true"
+						  WriteOnlyWhenDifferent="true" />
+		<ItemGroup>
+			<Compile Include="$(_SpawnJSWebWorkersBlazorAttrFile)" />
+			<FileWrites Include="$(_SpawnJSWebWorkersBlazorAttrFile)" />
+		</ItemGroup>
+	</Target>
+
+	<!-- Drop a stale ClassicBundle attribute file when the bundle is off (e.g. Blazor apps)
+	     so a prior non-Blazor/Debug build cannot leave a misleading .g.cs on disk. -->
+	<Target Name="SpawnJSWebWorkersCleanBundleAttribute"
+			BeforeTargets="CoreCompile"
+			Condition="'$(SpawnJSWebWorkersClassicBundle)' != 'true'">
+		<Delete Files="$(IntermediateOutputPath)SpawnJSWebWorkersClassicBundle.g.cs"
+				Condition="Exists('$(IntermediateOutputPath)SpawnJSWebWorkersClassicBundle.g.cs')" />
+	</Target>
+
 	<!-- Stamp [assembly: SpawnJSWebWorkersClassicBundle(true)] into the consuming app so
 	     WebWorkerService.NonModuleScriptAvailable reads true at runtime (sync reflection, every scope)
 	     and worker creation defaults to the bundled non-module entrypoint (main.classic.js).

@@ -2,6 +2,19 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.1.19
+
+- **Blazor WASM worker boot.** Blazor apps (`Microsoft.NET.Sdk.BlazorWebAssembly`) no longer fall through
+  to plain `dotnet.js` + `runMain`, which threw `ES6 module blazor-internal was not imported yet` inside
+  `WebAssemblyHostBuilder.CreateDefault` / `NavigationManager.getBaseURI`. Workers now load
+  `spawndev.spawnjs.webworkers.module.js` (faux-env + fingerprint-aware `blazor.webassembly.js` +
+  `Blazor.start`) so `setModuleImports("blazor-internal", …)` runs before managed entry. MSBuild sets
+  `SpawnJSWebWorkersBlazor=true` from the Blazor SDK (stamps `[assembly: SpawnJSWebWorkersBlazor(true)]`)
+  and defaults the plain-.Net classic bundle off so `WasmBundlerFriendlyBootConfig` is not forced onto a
+  stock Blazor page boot. Classic Blazor loader (`spawndev.spawnjs.webworkers.js`) is also restored with
+  import-map-aware `importOverride` that uses native `import()` when available (avoids `new Function`
+  breaking on `#private` fields in .Net 10 runtimes). Plain .Net WASM / Avalonia keep `main.classic.js`.
+
 ## 2.1.10
 
 - **Requires `SpawnDev.SpawnJS` >= 2.1.9**, which is where the app-root resolver stopped matching the

@@ -20,17 +20,17 @@ Run full .Net WebAssembly services in Web Workers, Shared Web Workers, and Servi
 
 ## SpawnJS.WebWorkers vs BlazorJS.WebWorkers
 
-SpawnDev.SpawnJS.WebWorkers is the [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS) port of [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers). The API is nearly identical, but there are important differences:
+SpawnDev.SpawnJS.WebWorkers is the [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS) port of [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers). The API is nearly identical. It supports:
 
-- **It targets plain .Net WASM, not Blazor.** SpawnJS provides Javascript interop for .Net WebAssembly without Blazor and without the JSON serialization layer - references are held as integer slots rather than `JSObject` proxies. There is no `WebAssemblyHostBuilder`, `RootComponents`, or `BlazorJSRunAsync()`.
-- **.Net WASM has no built-in dependency injection container**, so SpawnJS ships a minimal one (`SpawnJSAppBuilder`). You can use it, or wire your own.
-- **Your app is bundled to run in workers.** SpawnJS.WebWorkers builds two extra JavaScript entrypoints (`main.classic.js` and `main.module.js`) from your app's own output so it can run as a classic or module Worker/SharedWorker/ServiceWorker. This needs `WasmBundlerFriendlyBootConfig` (set automatically) and Node.js on PATH at build/publish. See [Worker bundle](#worker-bundle) below.
+- **Plain .Net WASM** (`Microsoft.NET.Sdk.WebAssembly`) via the classic/module bundle (`main.classic.js` / `main.module.js`) built from your app's own output. Uses `SpawnJSAppBuilder` (or your own DI) - no Blazor host required.
+- **Blazor WASM** (`Microsoft.NET.Sdk.BlazorWebAssembly` + [SpawnDev.SpawnJS.Blazor](https://github.com/LostBeard/SpawnDev.SpawnJS)) via Blazor worker scripts (`spawndev.spawnjs.webworkers.js` / `.module.js`) that install a faux DOM, load `blazor.webassembly.js`, and call `Blazor.start()` before managed `WebAssemblyHostBuilder.CreateDefault` (required so `blazor-internal` / NavigationManager is registered).
 
-If you are using Blazor WASM, use [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers) instead.
+If you use BlazorJS interop instead of SpawnJS, use [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers).
 
 ### Supported .Net Versions
 - .Net 10
 - .Net WebAssembly Standalone App (`Microsoft.NET.Sdk.WebAssembly`)
+- Blazor WebAssembly App (`Microsoft.NET.Sdk.BlazorWebAssembly`) with SpawnDev.SpawnJS.Blazor
 
 Tested working in the following browsers. Note that Chrome on Android does not currently support SharedWorkers.
 
@@ -44,7 +44,36 @@ Tested working in the following browsers. Note that Chrome on Android does not c
 
 If you have ***ANY*** issues or questions please open an issue [here](https://github.com/LostBeard/SpawnDev.SpawnJS.WebWorkers/issues) on GitHub.
 
+## Blazor WASM
+
+Blazor apps keep stock `blazor.webassembly.js` in the Window. Workers boot via
+`spawndev.spawnjs.webworkers.module.js` (faux DOM + `Blazor.start`) so
+`WebAssemblyHostBuilder.CreateDefault` can resolve `blazor-internal` / NavigationManager.
+
+Full setup, `Program.cs`, MSBuild notes, and why plain `dotnet.js` + `runMain` fails in Blazor workers:
+**[Docs/blazor.md](Docs/blazor.md)**.
+
+Minimal `Program.cs`:
+
+```csharp
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.Services.AddSpawnJSRuntime(out var JS);
+builder.Services.AddWebWorkerService();
+if (JS.IsWindow)
+{
+    builder.RootComponents.Add<App>("#app");
+    builder.RootComponents.Add<HeadOutlet>("head::after");
+}
+await builder.Build().SpawnJSRunAsync();
+```
+
+Requires [SpawnDev.SpawnJS.Blazor](https://www.nuget.org/packages/SpawnDev.SpawnJS.Blazor). The
+`SpawnDev.SpawnJS.WebWorkers.DemoBlazor` project in this repo is a working sample.
+
 ## Worker bundle
+
+> Applies to **plain .Net WASM** apps (`Microsoft.NET.Sdk.WebAssembly`). Blazor WASM apps use a different
+> worker entry - see [Blazor WASM](#blazor-wasm) and [Docs/blazor.md](Docs/blazor.md).
 
 > **New in 1.0.0** - workers now load a **classic or module bundle** built from your app's own output (`main.classic.js` / `main.module.js`), replacing the old module-only worker script. This is what makes the app runnable as a classic `<script>` / `importScripts()` and in browser-extension scopes. See [Docs/build-properties.md](Docs/build-properties.md) for the MSBuild properties (including the publish-only browser-extension folder rename).
 
@@ -76,7 +105,7 @@ Because the app boots through the bundle, point your `index.html` module script 
 
 ### Opting out
 
-Set `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` to skip the bundle build. The app is then a normal (non-bundler-friendly) .Net WASM app and worker creation falls back to the legacy module worker script (`spawndev.spawnjs.webworkers.module.js`), which only works when asset fingerprinting is off.
+Set `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` to skip the bundle build (already the default for Blazor WASM apps). For plain .Net WASM the app is then a normal (non-bundler-friendly) app and worker creation falls back to `spawndev.spawnjs.webworkers.dotnet.module.js`, which only works when asset fingerprinting is off.
 
 ### Browser extensions - renaming `_framework`
 

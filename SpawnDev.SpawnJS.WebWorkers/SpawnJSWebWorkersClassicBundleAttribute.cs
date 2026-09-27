@@ -12,8 +12,9 @@ namespace SpawnDev.SpawnJS.WebWorkers
     /// startup (a synchronous reflection read that works in every scope - Window, Worker,
     /// SharedWorker, ServiceWorker - with no DOM or fetch). When present and <see cref="Available"/>
     /// is true, WebWorkerService creates workers from the bundled entrypoints (defaulting to the
-    /// non-module <c>main.classic.js</c>); otherwise it falls back to the legacy module worker script
-    /// (<c>spawndev.spawnjs.webworkers.module.js</c>).
+    /// non-module <c>main.classic.js</c>); otherwise plain .Net WASM falls back to
+    /// <c>spawndev.spawnjs.webworkers.dotnet.module.js</c>. Blazor apps use
+    /// <see cref="SpawnJSWebWorkersBlazorAttribute"/> instead and ignore this attribute.
     /// </summary>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
     public sealed class SpawnJSWebWorkersClassicBundleAttribute : Attribute

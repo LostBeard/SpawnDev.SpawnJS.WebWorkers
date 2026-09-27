@@ -1,0 +1,21 @@
+﻿@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>Hello, world!</h1>
+
+Welcome to your new app.
+
+<button @onclick="Clicked">Run</button>
+
+
+@code {
+    [Inject]
+    WebWorkerService _webWorkerService { get; set; } = default!;
+
+    async Task Clicked()
+    {
+        using var worker = await _webWorkerService.GetWebWorker();
+        await worker!.Run(() => Console.WriteLine("Hello world!"));
+    }
+}

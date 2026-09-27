@@ -99,18 +99,30 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         public string InstanceId { get; }
         /// <summary>
-        /// The legacy module worker script (imports the event-holder, then ./_framework/dotnet.js).<br/>
-        /// Used when the bundled entrypoints are not available (<see cref="NonModuleScriptAvailable"/> is false).
+        /// Blazor WASM module worker entrypoint (faux-env + fingerprint-aware blazor.webassembly.js + Blazor.start).<br/>
+        /// Used when <see cref="IsBlazorApp"/> is true and a module worker is requested.
         /// </summary>
         public string WebWorkerModuleJSScript { get; } = "spawndev.spawnjs.webworkers.module.js";
         /// <summary>
-        /// The bundled NON-MODULE worker entrypoint (Rollup UMD, event-holder folded in).<br/>
+        /// Blazor WASM classic (non-module) worker entrypoint (importScripts faux-env, parse index.html, Blazor.start).<br/>
+        /// Used by default when <see cref="IsBlazorApp"/> is true.
+        /// </summary>
+        public string WebWorkerBlazorClassicJSScript { get; } = "spawndev.spawnjs.webworkers.js";
+        /// <summary>
+        /// Plain .Net WASM legacy module fallback (event-holder + ./_framework/dotnet.js + runMain).<br/>
+        /// Used when <see cref="IsBlazorApp"/> is false and the bundled entrypoints are not available.
+        /// Only works with asset fingerprinting off; prefer <see cref="WebWorkerClassicJSScript"/>.
+        /// </summary>
+        public string WebWorkerDotnetModuleJSScript { get; } = "spawndev.spawnjs.webworkers.dotnet.module.js";
+        /// <summary>
+        /// The bundled NON-MODULE worker entrypoint for plain .Net WASM (Rollup UMD, event-holder folded in).<br/>
         /// Produced at build time by the SpawnDev.SpawnJS.WebWorkers build targets; used by default for
-        /// new Worker/SharedWorker/ServiceWorker instances when <see cref="NonModuleScriptAvailable"/> is true.
+        /// new Worker/SharedWorker/ServiceWorker instances when <see cref="NonModuleScriptAvailable"/> is true
+        /// and <see cref="IsBlazorApp"/> is false.
         /// </summary>
         public string WebWorkerClassicJSScript { get; } = "main.classic.js";
         /// <summary>
-        /// The bundled MODULE worker entrypoint (Rollup ES, event-holder folded in).<br/>
+        /// The bundled MODULE worker entrypoint for plain .Net WASM (Rollup ES, event-holder folded in).<br/>
         /// Produced at build time alongside <see cref="WebWorkerClassicJSScript"/>; used when a module
         /// worker is explicitly requested and <see cref="NonModuleScriptAvailable"/> is true.
         /// </summary>
@@ -202,12 +214,19 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 }
                 CrossOriginLoaded = !SameOriginCheck(LocationHref, AppBaseUri);
                 WebWorkerModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerModuleJSScript).ToString();
+                WebWorkerBlazorClassicJSScript = new Uri(new Uri(AppBaseUri), WebWorkerBlazorClassicJSScript).ToString();
+                WebWorkerDotnetModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerDotnetModuleJSScript).ToString();
                 WebWorkerClassicJSScript = new Uri(new Uri(AppBaseUri), WebWorkerClassicJSScript).ToString();
                 WebWorkerBundledModuleJSScript = new Uri(new Uri(AppBaseUri), WebWorkerBundledModuleJSScript).ToString();
+                var entryAssembly = Assembly.GetEntryAssembly();
+                // Blazor apps stamp [assembly: SpawnJSWebWorkersBlazor(true)] so workers boot via
+                // faux-env + blazor.webassembly.js + Blazor.start (required before CreateDefault).
+                IsBlazorApp = entryAssembly?.GetCustomAttribute<SpawnJSWebWorkersBlazorAttribute>()?.Enabled ?? false;
                 // The bundle build stamps [assembly: SpawnJSWebWorkersClassicBundle(true)] into the app when it
                 // produced the bundled entrypoints (main.classic.js / main.module.js). Read it once here (sync
                 // reflection, works in every scope, no DOM/fetch); absent -> fall back to the legacy module path.
-                NonModuleScriptAvailable = Assembly.GetEntryAssembly()?.GetCustomAttribute<SpawnJSWebWorkersClassicBundleAttribute>()?.Available ?? false;
+                // Blazor apps default the classic bundle OFF (see props); they use the Blazor worker scripts.
+                NonModuleScriptAvailable = entryAssembly?.GetCustomAttribute<SpawnJSWebWorkersClassicBundleAttribute>()?.Available ?? false;
                 Locks = JS.Get<LockManager>("navigator?.locks");
                 LockManagerSupported = Locks != null;
                 var queryParams = HttpUtility.ParseQueryString(locationUri?.Query ?? "");
@@ -743,11 +762,19 @@ namespace SpawnDev.SpawnJS.WebWorkers
             return RegisterServiceWorker();
         }
         /// <summary>
+        /// True when this app is Blazor WebAssembly (<see cref="SpawnJSWebWorkersBlazorAttribute"/>).<br/>
+        /// Workers then boot via <see cref="WebWorkerModuleJSScript"/> (faux-env + Blazor.start; module
+        /// default for .Net 10 import-map / private-field compatibility) instead of the plain .Net
+        /// WASM bundle (<c>main.classic.js</c>) or legacy <c>dotnet.js</c> runMain path.
+        /// </summary>
+        public bool IsBlazorApp { get; private set; } = false;
+        /// <summary>
         /// True when the bundled worker entrypoints (<see cref="WebWorkerClassicJSScript"/> /
         /// <see cref="WebWorkerBundledModuleJSScript"/>) were produced for this build and are available to load.<br/>
         /// Set at startup from <see cref="SpawnJSWebWorkersClassicBundleAttribute"/> which the build targets stamp
-        /// into the app. When true, worker creation defaults to the non-module bundle (<c>main.classic.js</c>);
-        /// when false, it falls back to the legacy module worker script.
+        /// into the app. When true (and not <see cref="IsBlazorApp"/>), worker creation defaults to the
+        /// non-module bundle (<c>main.classic.js</c>); when false on a plain .Net WASM app, it falls back
+        /// to <see cref="WebWorkerDotnetModuleJSScript"/>.
         /// </summary>
         public bool NonModuleScriptAvailable { get; private set; } = false;
         /// <summary>
@@ -901,22 +928,31 @@ namespace SpawnDev.SpawnJS.WebWorkers
         }
 
         /// <summary>
-        /// Resolves the default worker entry script and whether it must load as a module, honoring
-        /// the bundled-entrypoint availability (<see cref="NonModuleScriptAvailable"/>).<br/>
-        /// When the bundle is available it prefers the non-module entrypoint (<c>main.classic.js</c>)
-        /// for compatibility, unless a module worker is explicitly requested (then <c>main.module.js</c>).
-        /// When the bundle is not available it falls back to the legacy module worker script
-        /// (<c>spawndev.spawnjs.webworkers.module.js</c>).
+        /// Resolves the default worker entry script and whether it must load as a module.<br/>
+        /// Blazor apps (<see cref="IsBlazorApp"/>) use the Blazor worker scripts (classic by default).<br/>
+        /// Plain .Net WASM apps use the classic/module bundle when available, else the legacy
+        /// <c>dotnet.js</c> module fallback.
         /// </summary>
         /// <param name="preferModule">True to request the module entrypoint (e.g. WorkerOptions.Type == "module").</param>
         /// <returns>The resolved script URL and whether it must be loaded as a module worker.</returns>
         private (string ScriptUrl, bool IsModule) _ResolveWorkerEntry(bool preferModule = false)
         {
+            // do NOT use main.classic.js / legacy runMain for Blazor - CreateDefault needs blazor-internal
+            // registered by Blazor.start() first (see NavigationManager getBaseURI).
+            // Prefer the module Blazor entry: native import() handles .Net 10 private fields + import maps.
+            // Classic importScripts + new Function patching breaks on #private fields when import maps force
+            // on-the-fly framework rewriting.
+            if (IsBlazorApp)
+            {
+                // Module Blazor entry is the default (and only) choice here: classic remains available
+                // via WebWorkerBlazorClassicJSScript if a caller passes an explicit classic ScriptUrl.
+                return (WebWorkerModuleJSScript, true);
+            }
             if (NonModuleScriptAvailable)
             {
                 return preferModule ? (WebWorkerBundledModuleJSScript, true) : (WebWorkerClassicJSScript, false);
             }
-            return (WebWorkerModuleJSScript, true);
+            return (WebWorkerDotnetModuleJSScript, true);
         }
         /// <summary>
         /// If true, all workers will be wrapped using Blob object Urls<br/>

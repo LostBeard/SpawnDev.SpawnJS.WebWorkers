@@ -4,9 +4,16 @@
 	<Import Project="Microsoft.AspNetCore.StaticWebAssets.props" Condition="Exists('$(MSBuildThisFileDirectory).\Microsoft.AspNetCore.StaticWebAssets.props')" />
 
 	<PropertyGroup>
-		<!-- Default ON (opt-out). Set to false to skip building the classic/module bundle
-		     entrypoints (main.classic.js / main.module.js); the app then relies on the
-		     module-worker path (spawndev.spawnjs.webworkers.module.js) as before. -->
+		<!-- Detect Blazor WebAssembly SDK (Microsoft.NET.Sdk.BlazorWebAssembly sets this).
+		     Consumers can also force Blazor worker boot with SpawnJSWebWorkersBlazor=true. -->
+		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == '' AND '$(UsingMicrosoftNETSdkBlazorWebAssembly)' == 'true'">true</SpawnJSWebWorkersBlazor>
+		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == ''">false</SpawnJSWebWorkersBlazor>
+
+		<!-- Classic/module bundle (main.classic.js / main.module.js) for plain .Net WASM.
+		     Default ON for non-Blazor. Default OFF for Blazor: workers must boot via
+		     faux-env + blazor.webassembly.js + Blazor.start, and WasmBundlerFriendlyBootConfig
+		     must not be forced onto a stock Blazor page boot. Opt in explicitly if needed. -->
+		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == '' AND '$(SpawnJSWebWorkersBlazor)' == 'true'">false</SpawnJSWebWorkersClassicBundle>
 		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == ''">true</SpawnJSWebWorkersClassicBundle>
 
 		<!-- Make the app's OWN boot config bundler-friendly (static, Rollup-followable asset imports) so the
