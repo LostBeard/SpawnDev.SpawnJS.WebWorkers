@@ -1,6 +1,19 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
+
+## 2.1.20 (unreleased; staged as 2.1.20-local.1)
+
+- **Fix: a consumer's `SpawnJSWebWorkersBlazor=false` in its csproj was ignored (2.1.19 regression).** The Blazor ->
+  ClassicBundle -> WasmBundlerFriendlyBootConfig defaults were computed in `build/*.props`, which NuGet imports BEFORE
+  the consuming project's body, so they saw the consumer's setting as empty. A Blazor-SDK app that boots through SpawnJS
+  (RazorRenderer, no Blazor JS runtime - e.g. a browser extension) set the opt-out and STILL got
+  `SpawnJSWebWorkersClassicBundle=false`: no `main.classic.js` / `main.module.js` in its output. The derived defaults now
+  live in `build/*.targets` (evaluated after the project body); the WASM SDK reads `WasmBundlerFriendlyBootConfig` only
+  inside its `_ResolveWasmConfiguration` target, so the targets-time default still reaches it. Both existing consumer
+  shapes (Blazor runtime, plain WASM) evaluate identically to 2.1.19.
+- **Test:** `Tests/BuildProps/check.ps1` evaluates DemoBlazor, Demo and a Blazor-SDK opt-out fixture. Red-checked
+  against the 2.1.19 props/targets: the opt-out case fails (ClassicBundle 'false', WasmBundlerFriendlyBootConfig '').
 
 ## 2.1.19
 

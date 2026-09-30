@@ -1,5 +1,27 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
+	<!-- Defaults for the derived switches. HERE, not in .props: a package .targets evaluates AFTER the consuming
+	     project's body, so a value the consumer sets in its csproj is visible and wins. (In .props these read the
+	     consumer's settings as empty - see the note in SpawnDev.SpawnJS.WebWorkers.props.)
+	     WasmBundlerFriendlyBootConfig is only read inside the WASM SDK's _ResolveWasmConfiguration target, so an
+	     evaluation-time default set here reaches it. -->
+	<PropertyGroup>
+		<!-- Blazor WebAssembly SDK (Microsoft.NET.Sdk.BlazorWebAssembly sets UsingMicrosoftNETSdkBlazorWebAssembly) means
+		     workers boot via faux-env + blazor.webassembly.js + Blazor.start. An app that uses the Blazor SDK only to
+		     compile .razor (SpawnJS.RazorRenderer, no Blazor JS runtime) sets SpawnJSWebWorkersBlazor=false. -->
+		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == '' AND '$(UsingMicrosoftNETSdkBlazorWebAssembly)' == 'true'">true</SpawnJSWebWorkersBlazor>
+		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == ''">false</SpawnJSWebWorkersBlazor>
+
+		<!-- Classic/module bundle (main.classic.js / main.module.js) for plain .Net WASM. Default ON for non-Blazor,
+		     OFF for Blazor (WasmBundlerFriendlyBootConfig must not be forced onto a stock Blazor page boot). -->
+		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == '' AND '$(SpawnJSWebWorkersBlazor)' == 'true'">false</SpawnJSWebWorkersClassicBundle>
+		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == ''">true</SpawnJSWebWorkersClassicBundle>
+
+		<!-- The app's OWN boot config made bundler-friendly (static, Rollup-followable asset imports) so the bundle
+		     entrypoints are produced from - and reference - the app's own _framework output. Consumer can override. -->
+		<WasmBundlerFriendlyBootConfig Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(WasmBundlerFriendlyBootConfig)' == ''">true</WasmBundlerFriendlyBootConfig>
+	</PropertyGroup>
+
 	<!-- Stamp [assembly: SpawnJSWebWorkersBlazor(true)] into Blazor WASM apps so
 	     WebWorkerService.IsBlazorApp reads true at runtime and workers boot via
 	     spawndev.spawnjs.webworkers.js (faux-env + Blazor.start) instead of main.classic.js. -->

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+	<!-- Build-props fixture (never built, only evaluated by Tests/BuildProps/check.ps1).
+	     A Blazor-SDK app that boots through SpawnJS (RazorRenderer), not Blazor's JS runtime, so it opts out of
+	     Blazor worker mode IN ITS OWN BODY - the way a real consumer does. Imports props at the top and targets at
+	     the bottom, the same order NuGet imports a package's build/ files. -->
+	<Import Project="..\..\..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.props" />
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<SpawnJSWebWorkersBlazor>false</SpawnJSWebWorkersBlazor>
+	</PropertyGroup>
+	<Import Project="..\..\..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets" />
+</Project>

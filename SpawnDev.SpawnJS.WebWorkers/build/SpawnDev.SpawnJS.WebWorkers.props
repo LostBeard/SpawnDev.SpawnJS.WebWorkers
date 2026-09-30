@@ -4,24 +4,12 @@
 	<Import Project="Microsoft.AspNetCore.StaticWebAssets.props" Condition="Exists('$(MSBuildThisFileDirectory).\Microsoft.AspNetCore.StaticWebAssets.props')" />
 
 	<PropertyGroup>
-		<!-- Detect Blazor WebAssembly SDK (Microsoft.NET.Sdk.BlazorWebAssembly sets this).
-		     Consumers can also force Blazor worker boot with SpawnJSWebWorkersBlazor=true. -->
-		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == '' AND '$(UsingMicrosoftNETSdkBlazorWebAssembly)' == 'true'">true</SpawnJSWebWorkersBlazor>
-		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == ''">false</SpawnJSWebWorkersBlazor>
-
-		<!-- Classic/module bundle (main.classic.js / main.module.js) for plain .Net WASM.
-		     Default ON for non-Blazor. Default OFF for Blazor: workers must boot via
-		     faux-env + blazor.webassembly.js + Blazor.start, and WasmBundlerFriendlyBootConfig
-		     must not be forced onto a stock Blazor page boot. Opt in explicitly if needed. -->
-		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == '' AND '$(SpawnJSWebWorkersBlazor)' == 'true'">false</SpawnJSWebWorkersClassicBundle>
-		<SpawnJSWebWorkersClassicBundle Condition="'$(SpawnJSWebWorkersClassicBundle)' == ''">true</SpawnJSWebWorkersClassicBundle>
-
-		<!-- Make the app's OWN boot config bundler-friendly (static, Rollup-followable asset imports) so the
-		     classic/module bundle entrypoints can be produced from - and reference - the app's OWN _framework
-		     output (no duplication, no separate inner build). This applies to the whole app; main.js uses the
-		     same _framework and boots unchanged. Fingerprinting/SRI are unaffected. Opting out of the bundle
-		     leaves this alone. A consumer can still override it explicitly. -->
-		<WasmBundlerFriendlyBootConfig Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(WasmBundlerFriendlyBootConfig)' == ''">true</WasmBundlerFriendlyBootConfig>
+		<!-- SpawnJSWebWorkersBlazor, SpawnJSWebWorkersClassicBundle and WasmBundlerFriendlyBootConfig are DERIVED
+		     from each other and from the SDK, so their defaults live in SpawnDev.SpawnJS.WebWorkers.targets, NOT here.
+		     A package .props is imported BEFORE the consuming project's body: a default computed here reads the
+		     consumer's own setting as empty, so an explicit <SpawnJSWebWorkersBlazor>false</...> in the csproj could
+		     never turn the classic bundle back on (2.1.19 regression: RazorRenderer apps built with the Blazor SDK -
+		     e.g. browser extensions - lost main.classic.js / main.module.js). -->
 
 		<!-- Publish-only, opt-in: rename the underscore-prefixed output folders so a published app can run
 		     where paths starting with '_' are illegal (browser extensions). Empty = no rename (default).

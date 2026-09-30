@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
 	<!-- ProjectReference does not auto-import NuGet build/ props+targets; Blazor worker mode +
-	     attribute stamping require both (props sets SpawnJSWebWorkersBlazor from the Blazor SDK). -->
+	     attribute stamping require both (the .targets derives SpawnJSWebWorkersBlazor from the Blazor SDK). -->
 	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.props" Condition=" '$(Configuration)' == 'Debug' " />
 
 	<PropertyGroup>
