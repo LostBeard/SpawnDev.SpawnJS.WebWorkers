@@ -2,9 +2,12 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
-## 2.1.20 (unreleased; staged as 2.1.20-local.1)
+## 2.2.0 - 2026-09-30
 
-- **Fix: a consumer's `SpawnJSWebWorkersBlazor=false` in its csproj was ignored (2.1.19 regression).** The Blazor ->
+- **On SpawnDev.SpawnJS 3.0.0** (one-crossing interop). Minor bump: an app that pins SpawnDev.SpawnJS 2.x directly now
+  gets NU1605 from this package's dependency. DemoBlazor moves to SpawnDev.SpawnJS.Blazor 3.0.0.
+- Gate: live suite 13/13 against this working tree (TestRunner --debug), Tests/BuildProps/check.ps1 all cases pass.
+- **Fix (staged as 2.1.20-local.1, never released on its own): a consumer's `SpawnJSWebWorkersBlazor=false` in its csproj was ignored (2.1.19 regression).** The Blazor ->
   ClassicBundle -> WasmBundlerFriendlyBootConfig defaults were computed in `build/*.props`, which NuGet imports BEFORE
   the consuming project's body, so they saw the consumer's setting as empty. A Blazor-SDK app that boots through SpawnJS
   (RazorRenderer, no Blazor JS runtime - e.g. a browser extension) set the opt-out and STILL got
