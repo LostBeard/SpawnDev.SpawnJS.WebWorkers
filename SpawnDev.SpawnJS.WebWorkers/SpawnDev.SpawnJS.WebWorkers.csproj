@@ -4,7 +4,7 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.2.1-local.2</Version>
+		<Version>2.2.1</Version>
 		<PackageReleaseNotes>v2.2.1 - Trim safe: IsTrimmable, trim warnings are build errors, and the test suite passes on a fully trimmed publish (TrimMode=full). Fix: an exception thrown synchronously by a worker method arrived as a plain Exception (wrapped in TargetInvocationException) instead of its own type. await (dynamic) removed (Microsoft.CSharp runtime binder). Service-type entry points carry DynamicallyAccessedMembers; GetService/GetKeyedService are marked RequiresDynamicCode (DispatchProxy: works on browser Mono, not NativeAOT).</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>

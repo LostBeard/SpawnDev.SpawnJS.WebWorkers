@@ -2,7 +2,7 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
-## 2.2.1 - unreleased (local 2.2.1-local.2)
+## 2.2.1 - 2026-10-01
 
 - **Trim safe, enforced.** `IsTrimmable`; every trim (IL2xxx) warning is a build error. The trim analyzer went from
   31 warnings to 0. How:

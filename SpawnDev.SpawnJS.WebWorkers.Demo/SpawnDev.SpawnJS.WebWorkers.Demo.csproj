@@ -23,7 +23,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.1-local.2" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.1" />
 	</ItemGroup>
 
 	<!-- A trimmed publish (-p:PublishTrimmed=true; this SDK then uses TrimMode=full) is how the LIBRARY is tested for
