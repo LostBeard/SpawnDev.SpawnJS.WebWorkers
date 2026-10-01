@@ -1,4 +1,5 @@
-﻿using SpawnDev.SpawnJS.JSObjects;
+﻿using System.Diagnostics.CodeAnalysis;
+using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.Marshaller;
 using System.Collections;
 using System.Reflection;
@@ -60,6 +61,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         }
         public HashSet<Type> SubTypes { get; } = new HashSet<Type>();
         internal bool ProcessStarted { get; private set; } = false;
+        [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Reflection over the public properties of a method return type for the object marshaller, the same per-member walk SpawnJS's own marshaller makes (SpawnDev.SpawnJS.Marshaller.TypeExtensions).")]
         internal void Process()
         {
             if (ProcessStarted) return;

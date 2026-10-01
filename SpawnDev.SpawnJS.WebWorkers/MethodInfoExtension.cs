@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using SpawnDev.SpawnJS.Marshaller;
@@ -139,17 +140,24 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="instance"></param>
         /// <param name="args"></param>
         /// <returns></returns>
+        // No 'dynamic' here: 'await (dynamic)x' runs through the Microsoft.CSharp runtime binder, which is reflection
+        // the trimmer cannot see. A Task<T> is awaited as a Task and its result read with SpawnJS's GetResult; a boxed
+        // ValueTask<T> is turned into its Task<T> with AsTask, kept by the DynamicDependency below.
+        [DynamicDependency(nameof(ValueTask<int>.AsTask), typeof(ValueTask<>))]
+        [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Reflects ValueTask<T>.AsTask, preserved for every T by the DynamicDependency on this method.")]
         public static async Task<object?> InvokeAsync(this MethodInfo _this, object? instance, object?[]? args)
         {
             object? returnValue = null;
-            object? tmpValue = _this.Invoke(instance, args);
+            // DoNotWrapExceptions: a synchronous throw must reach the caller as itself. Wrapped in a
+            // TargetInvocationException it serialized under that name and the caller could never catch the real
+            // type (an async method's throw already escaped the wrapper, at its await below).
+            object? tmpValue = _this.Invoke(instance, BindingFlags.DoNotWrapExceptions, null, args, null);
             if (tmpValue != null)
             {
                 var returnType = _this.ReturnType;
                 if (returnType.IsTaskTyped())
                 {
-                    await (dynamic)tmpValue;
-                    returnValue = returnType.GetProperty("Result")!.GetValue(tmpValue, null);
+                    returnValue = await ((Task)tmpValue).GetResult();
                 }
                 else if (tmpValue is Task task)
                 {
@@ -157,8 +165,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 }
                 else if (returnType.IsValueTaskTyped())
                 {
-                    await (dynamic)tmpValue;
-                    returnValue = returnType.GetProperty("Result")!.GetValue(tmpValue, null);
+                    var asTask = (Task)returnType.GetMethod(nameof(ValueTask<int>.AsTask), Type.EmptyTypes)!.Invoke(tmpValue, null)!;
+                    returnValue = await asTask.GetResult();
                 }
                 else if (tmpValue is ValueTask valueTask)
                 {

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
 using SpawnDev.SpawnJS.JSObjects;
 using SpawnDev.SpawnJS.Marshaller;
 using SpawnDev.SpawnJS.Marshallers;
@@ -943,6 +944,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
             public object? ServiceKey { get; set; }
             public bool IsKeyed { get; set; }
             public Type ServiceType { get; set; } = default!;
+            [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
             public Type ImplementationType { get; set; } = default!;
             public object? Service { get; set; }
         }
@@ -996,7 +998,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="serviceType"></param>
         /// <param name="implementationType"></param>
         /// <returns></returns>
-        public override async Task<bool> AddService(Type serviceType, Type implementationType)
+        public override async Task<bool> AddService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType)
         {
             var added = await Run(() => _AddService(serviceType, implementationType));
             return added;
@@ -1008,13 +1010,14 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="implementationType"></param>
         /// <param name="key"></param>
         /// <returns></returns>
-        public override async Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key)
+        public override async Task<bool> AddKeyedService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType, object key)
         {
             var keyType = key?.GetType();
             using var jsKey = key == null ? null : JS.ReturnAs<object, SpawnJSObject>(key);
             var added = await Run(() => _AddKeyedService(serviceType, implementationType, keyType!, jsKey));
             return added;
         }
+        [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "Wire boundary: the caller and the worker run the SAME trimmed build, and the name being resolved here was produced on the caller side from a statically referenced member (an expression tree, a delegate, an interface proxy call, or an annotated AddService/New entry point), so the trimmer kept it, and kept members stay visible to reflection.")]
         private async Task<bool> _AddService(Type serviceType, Type implementationType)
         {
             var service = await FindServiceAsync(serviceType);
@@ -1027,6 +1030,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
             });
             return true;
         }
+        [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "Wire boundary: the caller and the worker run the SAME trimmed build, and the name being resolved here was produced on the caller side from a statically referenced member (an expression tree, a delegate, an interface proxy call, or an annotated AddService/New entry point), so the trimmer kept it, and kept members stay visible to reflection.")]
         private async Task<bool> _AddKeyedService(Type serviceType, Type implementationType, Type keyType, SpawnJSObject? jsKey)
         {
             var key = keyType == null ? null : jsKey?.JSRef?.As(keyType);
@@ -1182,6 +1186,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
                 return removed;
             }
         }
+        [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "Wire boundary: the caller and the worker run the SAME trimmed build, and the name being resolved here was produced on the caller side from a statically referenced member (an expression tree, a delegate, an interface proxy call, or an annotated AddService/New entry point), so the trimmer kept it, and kept members stay visible to reflection.")]
         private async Task _CreateKeyedService(string constructorInfoJson, Type serviceType, Type? implementationType, Type? keyType, SpawnJSObject? jsKey, Array? args, Type[]? argTypes, [TransferableList] object[]? transferables)
         {
             var constructorInfo = SerializableMethodInfo.DeserializeConstructorInfoInfo(constructorInfoJson);
@@ -1249,6 +1254,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="args"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
+        [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "The implementation type is the ReflectedType of a ConstructorInfo taken from a New<TService>(() => new TService(...)) expression, whose TService carries DynamicallyAccessedMembers(PublicConstructors), so its public constructors are preserved. The serviceType fallback is only reached when ReflectedType is null.")]
+        [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "See IL2067 on this method.")]
         public override async Task CreateKeyedService(ConstructorInfo constructorInfo, Type? serviceType, object serviceKey, object[]? args)
         {
             var implementationType = constructorInfo.ReflectedType!;
@@ -1414,9 +1421,20 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// Creates a typed Action
         /// </summary>
         public static Action<T0, T1, T2, T3, T4> CreateTypedActionT5<T0, T1, T2, T3, T4>(Action<object?[]> arg) => new Action<T0, T1, T2, T3, T4>((t0, t1, t2, t3, t4) => arg(new object[] { t0!, t1!, t2!, t3!, t4! }));
+        // Constant names (nameof), not $"CreateTypedActionT{n}": given an unknown name the trimmer must treat every
+        // public method of this type as reflection-reached, which IL2111 rejects for the DAM-annotated AddService overloads.
+        [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = "MakeGenericMethod closes WebWorkers' own CreateTypedActionTn over the callback's argument types; that helper only builds a delegate that boxes its arguments and reflects no members of them.")]
         private object CreateTypedAction(Type[] typ1, Action<object?[]> arg)
         {
-            var method = typeof(ServiceCallDispatcher).GetMethod($"CreateTypedActionT{typ1.Length}", BindingFlags.Public | BindingFlags.Static);
+            var method = typ1.Length switch
+            {
+                1 => typeof(ServiceCallDispatcher).GetMethod(nameof(CreateTypedActionT1), BindingFlags.Public | BindingFlags.Static),
+                2 => typeof(ServiceCallDispatcher).GetMethod(nameof(CreateTypedActionT2), BindingFlags.Public | BindingFlags.Static),
+                3 => typeof(ServiceCallDispatcher).GetMethod(nameof(CreateTypedActionT3), BindingFlags.Public | BindingFlags.Static),
+                4 => typeof(ServiceCallDispatcher).GetMethod(nameof(CreateTypedActionT4), BindingFlags.Public | BindingFlags.Static),
+                5 => typeof(ServiceCallDispatcher).GetMethod(nameof(CreateTypedActionT5), BindingFlags.Public | BindingFlags.Static),
+                _ => null,
+            };
             if (method == null) throw new Exception("CreateTypedAction: Unable to find method with given paramter count.");
             var gmeth = method.MakeGenericMethod(typ1);
             var genericAction = gmeth.Invoke(null, new object[] { arg });

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
@@ -34,7 +35,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="_this"></param>
         /// <param name="config"></param>
         /// <returns></returns>
-        public static IServiceCollection RegisterServiceWorker<TService>(this IServiceCollection _this, ServiceWorkerConfig? config = null) where TService : ServiceWorkerEventHandler
+        public static IServiceCollection RegisterServiceWorker<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(this IServiceCollection _this, ServiceWorkerConfig? config = null) where TService : ServiceWorkerEventHandler
         {
             ServiceWorkerConfig = config ?? new ServiceWorkerConfig { Register = ServiceWorkerStartupRegistration.Register };
             var typeTService = typeof(TService);
@@ -52,7 +53,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="startScope"></param>
         /// <param name="config"></param>
         /// <returns></returns>
-        public static IServiceCollection RegisterServiceWorker<TService>(this IServiceCollection _this, GlobalScope startScope, ServiceWorkerConfig? config = null) where TService : ServiceWorkerEventHandler
+        public static IServiceCollection RegisterServiceWorker<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(this IServiceCollection _this, GlobalScope startScope, ServiceWorkerConfig? config = null) where TService : ServiceWorkerEventHandler
         {
             ServiceWorkerConfig = config ?? new ServiceWorkerConfig { Register = ServiceWorkerStartupRegistration.Register };
             var typeTService = typeof(TService);

@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
@@ -478,11 +479,11 @@ namespace SpawnDev.SpawnJS.WebWorkers
         {
             throw new NotImplementedException();
         }
-        public override Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key)
+        public override Task<bool> AddKeyedService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType, object key)
         {
             throw new NotImplementedException();
         }
-        public override Task<bool> AddService(Type serviceType, Type implementationType)
+        public override Task<bool> AddService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType)
         {
             throw new NotImplementedException();
         }

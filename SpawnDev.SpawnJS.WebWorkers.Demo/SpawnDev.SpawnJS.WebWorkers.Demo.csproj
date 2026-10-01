@@ -23,9 +23,15 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.0" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.1-local.2" />
 	</ItemGroup>
 
+	<!-- A trimmed publish (-p:PublishTrimmed=true; this SDK then uses TrimMode=full) is how the LIBRARY is tested for
+	     trim safety. The Demo itself is rooted whole: its suite runner finds test methods by reflection, and a trimmed
+	     away test would vanish from the run instead of failing. -->
+	<ItemGroup>
+		<TrimmerRootAssembly Include="SpawnDev.SpawnJS.WebWorkers.Demo" />
+	</ItemGroup>
 	<ItemGroup>
 		<StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
 	</ItemGroup>

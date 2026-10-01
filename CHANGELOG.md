@@ -2,6 +2,34 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.1 - unreleased (local 2.2.1-local.2)
+
+- **Trim safe, enforced.** `IsTrimmable`; every trim (IL2xxx) warning is a build error. The trim analyzer went from
+  31 warnings to 0. How:
+  - Service-type entry points (`AddService`/`AddKeyedService` and overrides, `New<TService>`, `RegisterServiceWorker<TService>`)
+    carry `[DynamicallyAccessedMembers(PublicConstructors)]`; `InterfaceCallDispatcher<T>` / `GetService<T>` carry `All`.
+  - Wire-boundary reflection (the worker re-resolving a type/method by NAME) is suppressed with one stated justification:
+    both sides run the same trimmed build and the name came from a statically referenced member on the caller side.
+  - `CreateTypedAction` looks its helpers up by `nameof` instead of an interpolated name (an unknown name makes every
+    public method of the type reflection-reached: IL2111 on the annotated `AddService` overloads).
+  - `await (dynamic)x` removed from `MethodInfoExtension.InvokeAsync` (Microsoft.CSharp runtime binder): `Task<T>` via
+    SpawnJS `GetResult`, boxed `ValueTask<T>` via `AsTask` (kept by `DynamicDependency`).
+- **NOT `IsAotCompatible`.** `GetService`/`GetKeyedService` (DispatchProxy) are `[RequiresDynamicCode]`; two runtime generic
+  closures remain. All run on browser .NET (Mono interpreter, and Mono AOT through its interpreter fallback), not NativeAOT.
+  The AOT analyzer stays on so those 10 IL3050 sites stay visible.
+- **Fix: a worker method that throws synchronously now surfaces its own exception type.** `MethodInfo.Invoke` wrapped it in
+  `TargetInvocationException`, which serialized under that name and came back as a plain `Exception`, so
+  `catch (OperationCanceledException)` around a sync worker call never matched. Now `BindingFlags.DoNotWrapExceptions`.
+  `ExceptionSerializer` also rebuilds common BCL exceptions (cancellation, argument, IO, ...) without reflection, and
+  `ArgumentNullException`/`ArgumentOutOfRangeException`/`ObjectDisposedException` get the message (not the param name).
+- **Tests:** `WebWorkerReflectionPathTests` (6), one per reflection path: callback `Action<T>` args, `Task<T>`/`ValueTask<T>`/
+  `ValueTask` returns, generic + overloaded methods, exception types, runtime `AddService`, `New(() => new T(...))`.
+  The exception test failed before the DoNotWrapExceptions fix.
+- **Gate:** 19/19 against this working tree (`--debug`), and 19/19 against a TRIMMED Release publish of the Demo on the
+  2.2.1-local.2 package (`dotnet publish -c Release -p:PublishTrimmed=true`; this SDK defaults to `TrimMode=full`), served
+  statically and run with `--url`. The trimmer cut the library from 346 types / 1659 methods to 233 / 1132. The Demo roots
+  its own assembly (`TrimmerRootAssembly`) so the reflection-discovered tests cannot be trimmed out of the run.
+
 ## 2.2.0 - 2026-09-30
 
 - **On SpawnDev.SpawnJS 3.0.0** (one-crossing interop). Minor bump: an app that pins SpawnDev.SpawnJS 2.x directly now

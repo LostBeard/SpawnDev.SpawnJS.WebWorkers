@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TypeExtensions = SpawnDev.SpawnJS.Marshaller.TypeExtensions;
@@ -128,6 +129,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
             if (type == null) return "";
             return !string.IsNullOrEmpty(type.AssemblyQualifiedName) ? type.AssemblyQualifiedName : (!string.IsNullOrEmpty(type.FullName) ? type.FullName : type.Name);
         }
+        [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Wire boundary: the caller and the worker run the SAME trimmed build, and the name being resolved here was produced on the caller side from a statically referenced member (an expression tree, a delegate, an interface proxy call, or an annotated AddService/New entry point), so the trimmer kept it, and kept members stay visible to reflection.")]
+        [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = "Wire boundary: the caller and the worker run the SAME trimmed build, and the name being resolved here was produced on the caller side from a statically referenced member (an expression tree, a delegate, an interface proxy call, or an annotated AddService/New entry point), so the trimmer kept it, and kept members stay visible to reflection.")]
         void Resolve()
         {
             if (Resolved) return;

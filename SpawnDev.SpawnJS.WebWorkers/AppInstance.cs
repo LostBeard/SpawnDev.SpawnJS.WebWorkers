@@ -1,4 +1,5 @@
-﻿using SpawnDev.SpawnJS.JSObjects;
+﻿using System.Diagnostics.CodeAnalysis;
+using SpawnDev.SpawnJS.JSObjects;
 using System.Reflection;
 using System.Text.Json.Serialization;
 
@@ -216,12 +217,12 @@ namespace SpawnDev.SpawnJS.WebWorkers
             return Dispatcher!.ServiceExists(serviceType);
         }
         /// <inheritdoc/>
-        public override Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key)
+        public override Task<bool> AddKeyedService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType, object key)
         {
             return Dispatcher!.AddKeyedService(serviceType, implementationType, key);
         }
         /// <inheritdoc/>
-        public override Task<bool> AddService(Type serviceType, Type implementationType)
+        public override Task<bool> AddService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType)
         {
             return Dispatcher!.AddService(serviceType, implementationType);
         }

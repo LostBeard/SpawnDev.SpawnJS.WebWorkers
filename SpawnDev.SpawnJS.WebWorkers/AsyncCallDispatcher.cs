@@ -1,4 +1,5 @@
-﻿using System.Linq.Expressions;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace SpawnDev.SpawnJS.WebWorkers
@@ -117,7 +118,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         /// <param name="serviceType"></param>
         /// <returns></returns>
-        public virtual Task<bool> AddService(Type serviceType)
+        public virtual Task<bool> AddService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType)
         {
             return AddService(serviceType, serviceType);
         }
@@ -127,7 +128,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="serviceType"></param>
         /// <param name="key"></param>
         /// <returns></returns>
-        public virtual Task<bool> AddKeyedService(Type serviceType, object key)
+        public virtual Task<bool> AddKeyedService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, object key)
         {
             return AddKeyedService(serviceType, serviceType, key);
         }
@@ -138,15 +139,15 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="implementationType"></param>
         /// <param name="key"></param>
         /// <returns></returns>
-        public abstract Task<bool> AddKeyedService(Type serviceType, Type implementationType, object key);
+        public abstract Task<bool> AddKeyedService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType, object key);
         /// <summary>
         /// Add a service at runtime
         /// </summary>
-        public abstract Task<bool> AddService(Type serviceType, Type implementationType);
+        public abstract Task<bool> AddService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type implementationType);
         /// <summary>
         /// Add a service at runtime
         /// </summary>
-        public virtual Task<bool> AddService<TService>()
+        public virtual Task<bool> AddService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>()
         {
             return AddService(typeof(TService));
         }
@@ -156,21 +157,21 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <typeparam name="TService"></typeparam>
         /// <typeparam name="TImplementation"></typeparam>
         /// <returns></returns>
-        public virtual Task<bool> AddService<TService, TImplementation>()
+        public virtual Task<bool> AddService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>()
         {
             return AddService(typeof(TService), typeof(TImplementation));
         }
         /// <summary>
         /// Add a service at runtime
         /// </summary>
-        public virtual Task<bool> AddKeyedService<TService>(object key)
+        public virtual Task<bool> AddKeyedService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(object key)
         {
             return AddKeyedService(typeof(TService), key);
         }
         /// <summary>
         /// Add a service at runtime
         /// </summary>
-        public virtual Task<bool> AddKeyedService<TService, TImplementation>(object key)
+        public virtual Task<bool> AddKeyedService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>(object key)
         {
             return AddKeyedService(typeof(TService), typeof(TImplementation), key);
         }
@@ -183,7 +184,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// </summary>
         /// <typeparam name="TServiceInterface">Service interface</typeparam>
         /// <returns></returns>
-        public TServiceInterface GetService<TServiceInterface>() where TServiceInterface : class
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
+        public TServiceInterface GetService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TServiceInterface>() where TServiceInterface : class
         {
             var typeofT = typeof(TServiceInterface);
             if (!typeofT.IsInterface) throw new Exception("GetService can only access services via their registered interface");
@@ -199,7 +201,8 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <typeparam name="TServiceInterface"></typeparam>
         /// <param name="key"></param>
         /// <returns></returns>
-        public TServiceInterface GetKeyedService<TServiceInterface>(object key) where TServiceInterface : class
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
+        public TServiceInterface GetKeyedService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TServiceInterface>(object key) where TServiceInterface : class
         {
             var typeofT = typeof(TServiceInterface);
             if (!typeofT.IsInterface) throw new Exception("GetKeyedService can only access services via their registered interface");
@@ -527,7 +530,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="serviceKey"></param>
         /// <param name="expr"></param>
         /// <returns></returns>
-        public Task New<TService>(object serviceKey, Expression<Func<TService>> expr) => CreateKeyed(expr.Body, serviceKey, typeof(TService));
+        public Task New<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(object serviceKey, Expression<Func<TService>> expr) => CreateKeyed(expr.Body, serviceKey, typeof(TService));
         /// <summary>
         /// Create a new runtime service
         /// </summary>
@@ -540,7 +543,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <typeparam name="TService"></typeparam>
         /// <param name="expr"></param>
         /// <returns></returns>
-        public Task New<TService>(Expression<Func<TService>> expr) => Create(expr.Body, typeof(TService));
+        public Task New<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(Expression<Func<TService>> expr) => Create(expr.Body, typeof(TService));
         #region Non-Keyed
 
         // Static

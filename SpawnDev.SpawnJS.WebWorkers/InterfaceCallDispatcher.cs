@@ -1,13 +1,25 @@
-﻿using SpawnDev.SpawnJS.Marshaller;
+﻿using System.Diagnostics.CodeAnalysis;
+using SpawnDev.SpawnJS.Marshaller;
 using System.Reflection;
 
 namespace SpawnDev.SpawnJS.WebWorkers
 {
     /// <summary>
+    /// Shared text for the interface-proxy APIs' [RequiresDynamicCode].
+    /// </summary>
+    public static class InterfaceCallDispatcherInfo
+    {
+        /// <summary>
+        /// Why the interface proxy needs dynamic code. Browser .NET (Mono: interpreter, or AOT with its interpreter
+        /// fallback) runs it; NativeAOT cannot. Run/Invoke/New calls never use a proxy and have no such limit.
+        /// </summary>
+        public const string DynamicCodeMessage = "GetService/GetKeyedService build a System.Reflection.DispatchProxy, which emits a proxy type at runtime. Supported on browser .NET (Mono interpreter, and Mono AOT via its interpreter fallback); not supported under NativeAOT. The expression based Run/Invoke/New APIs need no proxy.";
+    }
+    /// <summary>
     /// This Proxy presents itself as the interface it is created with but calls are converted to MethodInfos with arguments and passed onto the ICallDispatcher given at creation
     /// </summary>
     /// <typeparam name="TServiceInterface"></typeparam>
-    public class InterfaceCallDispatcher<TServiceInterface> : DispatchProxy where TServiceInterface : class
+    public class InterfaceCallDispatcher<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)] TServiceInterface> : DispatchProxy where TServiceInterface : class
     {
         private Func<Type, MethodInfo, object?[]?, object?>? Resolver { get; set; }
         private Func<Type, MethodInfo, object?[]?, Task<object?>>? AsyncResolver { get; set; }
@@ -62,6 +74,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="keyedResolver"></param>
         /// <param name="asyncKeyedResolver"></param>
         /// <returns></returns>
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
         public static TServiceInterface CreateInterfaceDispatcher(object key, Func<Type, object?, MethodInfo, object?[]?, Task<object?>> keyedResolver, Func<Type, object?, MethodInfo, object?[]?, Task<object?>>? asyncKeyedResolver = null)
         {
             if (!typeof(TServiceInterface).IsInterface) throw new Exception("InterfaceCallDispatcher can only be created for interface types");
@@ -80,6 +93,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="key"></param>
         /// <param name="asyncKeyedResolver"></param>
         /// <returns></returns>
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
         public static TServiceInterface CreateInterfaceDispatcher(object key, Func<Type, object, MethodInfo, object?[]?, Task<object?>> asyncKeyedResolver)
         {
             if (!typeof(TServiceInterface).IsInterface) throw new Exception("InterfaceCallDispatcher can only be created for interface types");
@@ -97,6 +111,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="asyncResolver"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
         public static TServiceInterface CreateInterfaceDispatcher(Func<Type, MethodInfo, object?[]?, Task<object?>> asyncResolver)
         {
             if (!typeof(TServiceInterface).IsInterface) throw new Exception("InterfaceCallDispatcher can only be created for interface types");
@@ -112,6 +127,7 @@ namespace SpawnDev.SpawnJS.WebWorkers
         /// <param name="resolver"></param>
         /// <param name="asyncResolver"></param>
         /// <returns></returns>
+        [RequiresDynamicCode(InterfaceCallDispatcherInfo.DynamicCodeMessage)]
         public static TServiceInterface CreateInterfaceDispatcher(Func<Type, MethodInfo, object?[]?, object?> resolver, Func<Type, MethodInfo, object?[]?, Task<object?>>? asyncResolver = null)
         {
             if (!typeof(TServiceInterface).IsInterface) throw new Exception("InterfaceCallDispatcher can only be created for interface types");
