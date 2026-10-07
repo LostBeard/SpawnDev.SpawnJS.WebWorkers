@@ -21,10 +21,29 @@ import { dotnet } from './_framework/dotnet.js';
 //   - new Worker(".../main.classic.js")    -> the worker script folder's _framework/<name>
 // No withResourceLoader re-rooting is needed: the bundle reuses the real _framework assets
 // as-is (nothing is emitted or renamed), so the default URIs are already correct.
+const isServiceWorkerScope = globalThis.constructor?.name === 'ServiceWorkerGlobalScope';
+
+// In a ServiceWorker, serve the runtime's own files from Cache Storage when the app cached them (an offline PWA):
+// a ServiceWorker's fetches never pass through its own fetch handler, so without this a worker that the browser
+// restarts while offline cannot load .Net at all - and every request it holds (the page's navigation too) waits.
+// JS modules keep the default path (.Net expects a URL for those, not a Response); everything else - assemblies,
+// dotnet.native.wasm, ICU data, ... - is matched in the caches first, then fetched.
+function cacheFirstResourceLoader(type, name, defaultUri, integrity, behavior) {
+    if (type === 'dotnetjs' || String(behavior || '').indexOf('js-module') === 0) return undefined;
+    return caches.match(defaultUri, { ignoreSearch: true })
+        .then(function (cached) { return cached || fetch(defaultUri, integrity ? { integrity: integrity } : undefined); });
+}
+
 async function boot() {
-    const runtime = await dotnet
-        .withApplicationArguments('start')
-        .create();
+    let builder = dotnet.withApplicationArguments('start');
+    if (isServiceWorkerScope && globalThis.caches) builder = builder.withResourceLoader(cacheFirstResourceLoader);
+    let runtime;
+    try {
+        runtime = await builder.create();
+    } catch (err) {
+        if (isServiceWorkerScope && globalThis.ReleaseMissedServiceWorkerEvents) globalThis.ReleaseMissedServiceWorkerEvents(err);
+        throw err;
+    }
 
     // Dispatch the managed entry point (Program.cs). It runs until Exit(), so
     // runMain() may never resolve - do NOT await it for readiness, just surface a

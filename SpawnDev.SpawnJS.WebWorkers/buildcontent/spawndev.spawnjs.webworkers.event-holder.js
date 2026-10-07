@@ -23,6 +23,19 @@
             _missedConnections.push(e.ports[0]);
         };
     } else if (globalThisTypeName == 'ServiceWorkerGlobalScope') {
+        // Blazor's service worker asset manifest (ServiceWorkerConfig.ImportServiceWorkerAssets adds the
+        // importServiceWorkerAssets query parameter to the worker URL). The legacy worker script imported it; the
+        // classic/module bundle did not, so ServiceWorkerEventHandler.AssetsManifest was always null for bundle apps.
+        // importScripts is only allowed in a classic worker and only during this first synchronous evaluation.
+        try {
+            var assetsParam = new URL(globalThis.location.href).searchParams.get('importServiceWorkerAssets');
+            if (assetsParam) {
+                var manifestUrl = assetsParam.indexOf('.js') !== -1 ? assetsParam : 'service-worker-assets.js';
+                importScripts(new URL(manifestUrl, globalThis.location.href).href);
+            }
+        } catch (err) {
+            console.error('SpawnJS.WebWorkers: could not import the service worker asset manifest (a module service worker cannot importScripts; use a classic one):', err);
+        }
         var isExtensionScope = globalThis.location?.href && globalThis.location.href.indexOf('-extension://') !== -1;
         if (!isExtensionScope) {
             // .Net Wasm startup is async. This holds the synchronously fired ewvents for so they are available when .Net Wasm starts
@@ -75,6 +88,22 @@
                 var ret = missedServiceWorkerEvents;
                 missedServiceWorkerEvents = [];
                 return ret;
+            };
+            // Called by the bundle loader when .Net cannot start in this worker (e.g. offline with nothing cached):
+            // without it, every held fetch - including the page's own navigation - would wait forever. Fetches go to
+            // the network (and fail normally when offline); other events complete.
+            globalThis.ReleaseMissedServiceWorkerEvents = function (reason) {
+                holdEvents = false;
+                var held = missedServiceWorkerEvents;
+                missedServiceWorkerEvents = [];
+                console.error('SpawnJS.WebWorkers: .Net did not start in the service worker; releasing ' + held.length + ' held event(s):', reason);
+                for (var i = 0; i < held.length; i++) {
+                    var e = held[i];
+                    try {
+                        if (e.responseResolve) e.responseResolve(e.type === 'fetch' ? fetch(e.request) : undefined);
+                        else if (e.waitResolve) e.waitResolve();
+                    } catch (err) { /* the event is already settled */ }
+                }
             };
         }
     }

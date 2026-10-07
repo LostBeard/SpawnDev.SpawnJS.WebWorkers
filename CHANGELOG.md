@@ -2,6 +2,26 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.2 - 2026-10-06
+
+Offline PWAs with a .NET ServiceWorker (classic bundle). Found with MiniRover, which now opens with no network.
+
+- **A .NET ServiceWorker could not start offline.** A ServiceWorker's own fetches never pass through its fetch
+  handler, so when the browser restarted the worker with no network, .NET's boot fetched `_framework` files from the
+  network and failed, and every request the event-holder was holding (the page's own navigation too) waited forever.
+  In a ServiceWorker the bundle loader now gives .NET a resource loader that serves its files from Cache Storage when
+  the app cached them (JS modules keep the default path), then falls back to the network.
+- **Held ServiceWorker events no longer hang if .NET fails to start.** The loader releases them
+  (`ReleaseMissedServiceWorkerEvents`): fetches go to the network, other events complete, and the error is logged.
+- **`ServiceWorkerConfig.ImportServiceWorkerAssets` works with the classic bundle.** Only the legacy worker script
+  imported the asset manifest named by the `importServiceWorkerAssets` query parameter, so
+  `ServiceWorkerEventHandler.AssetsManifest` was always null for bundle apps. The event-holder now imports it during
+  the worker's first synchronous evaluation (classic workers; a module worker logs why it cannot).
+- Verified in MiniRover: online load, the worker caches every file, then with the web server gone and all
+  ServiceWorkers stopped, the app reopens from a cold worker (2.6 s); before the fix the offline reload hung.
+  TestRunner 19/19.
+
+
 ## 2.2.1 - 2026-10-01
 
 - **Trim safe, enforced.** `IsTrimmable`; every trim (IL2xxx) warning is a build error. The trim analyzer went from

@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.2.1</Version>
-		<PackageReleaseNotes>v2.2.1 - Trim safe: IsTrimmable, trim warnings are build errors, and the test suite passes on a fully trimmed publish (TrimMode=full). Fix: an exception thrown synchronously by a worker method arrived as a plain Exception (wrapped in TargetInvocationException) instead of its own type. await (dynamic) removed (Microsoft.CSharp runtime binder). Service-type entry points carry DynamicallyAccessedMembers; GetService/GetKeyedService are marked RequiresDynamicCode (DispatchProxy: works on browser Mono, not NativeAOT).</PackageReleaseNotes>
+		<Version>2.2.2</Version>
+		<PackageReleaseNotes>v2.2.2 - Offline PWAs: a .NET ServiceWorker starts offline (runtime files served from Cache Storage), held ServiceWorker events are released if .NET cannot start, and ImportServiceWorkerAssets works with the classic bundle.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
