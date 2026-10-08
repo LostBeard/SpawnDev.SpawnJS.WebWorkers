@@ -4,6 +4,11 @@ These MSBuild properties control how SpawnDev.SpawnJS.WebWorkers builds the work
 published output. Set them in a `<PropertyGroup>` in your app's `.csproj`. See the
 [README](../README.md#worker-bundle) for the conceptual overview.
 
+They apply whether your app references this package directly or only through another package or project (2.2.4+,
+via `buildTransitive/`). Only browser WASM applications are affected (`Microsoft.NET.Sdk.WebAssembly` or the Blazor
+WASM SDK, and `OutputType=Exe`); a server, test project, or class library that reaches this package through a
+reference is left alone. See [How the boot path is chosen](../README.md#how-the-boot-path-is-chosen).
+
 | Property | Default | When it applies | Purpose |
 |---|---|---|---|
 | `SpawnJSWebWorkersBlazor` | `true` when the app ships `blazor.webassembly.js`: `UsingMicrosoftNETSdkBlazorWebAssembly` is `true` **and** `BlazorWebAssemblyJSPath` is set (by `Microsoft.AspNetCore.Components.WebAssembly`); else `false`. A Blazor SDK app without that package (SpawnJS.RazorRenderer) is `false`. | build + publish | Enables Blazor worker boot. Stamps `[assembly: SpawnJSWebWorkersBlazor(true)]` so `WebWorkerService` loads `spawndev.spawnjs.webworkers.module.js` by default (faux-env + fingerprinted `blazor.webassembly.js` + `Blazor.start`) instead of the plain .Net WASM bundle. Also defaults `SpawnJSWebWorkersClassicBundle` to `false` so `WasmBundlerFriendlyBootConfig` is not forced onto a stock Blazor page boot. See [blazor.md](blazor.md). |

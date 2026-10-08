@@ -6,6 +6,12 @@
 	     WasmBundlerFriendlyBootConfig is only read inside the WASM SDK's _ResolveWasmConfiguration target, so an
 	     evaluation-time default set here reaches it. -->
 	<PropertyGroup>
+		<!-- Every action below (attribute stamping, bundling) is for a browser WASM APPLICATION only. OutputType=Exe alone is
+		     not enough since 2.2.4 imports these targets transitively (buildTransitive/): a hosted ASP.NET server or a test
+		     project that reaches this package through a ProjectReference to a WASM client is also an Exe, and must not
+		     bundle. Microsoft.NET.Sdk.WebAssembly (also imported by the Blazor WASM SDK) sets UsingMicrosoftNETSdkWebAssembly. -->
+		<_SpawnJSWebWorkersIsWasmApp Condition="'$(UsingMicrosoftNETSdkWebAssembly)' == 'true' AND '$(OutputType)' == 'Exe'">true</_SpawnJSWebWorkersIsWasmApp>
+
 		<!-- Blazor worker boot (faux-env + blazor.webassembly.js + Blazor.start) only when the app actually ships the
 		     Blazor JS runtime. The Blazor SDK alone is NOT that signal: SpawnJS.RazorRenderer apps use the Blazor SDK
 		     only to compile .razor and boot through main.classic.js (2.1.19 - 2.2.2 keyed on the SDK and left them with
@@ -30,7 +36,7 @@
 	     spawndev.spawnjs.webworkers.js (faux-env + Blazor.start) instead of main.classic.js. -->
 	<Target Name="SpawnJSWebWorkersGenerateBlazorAttribute"
 			BeforeTargets="CoreCompile"
-			Condition="'$(SpawnJSWebWorkersBlazor)' == 'true' AND '$(OutputType)' == 'Exe'">
+			Condition="'$(SpawnJSWebWorkersBlazor)' == 'true' AND '$(_SpawnJSWebWorkersIsWasmApp)' == 'true'">
 		<PropertyGroup>
 			<_SpawnJSWebWorkersBlazorAttrFile>$(IntermediateOutputPath)SpawnJSWebWorkersBlazor.g.cs</_SpawnJSWebWorkersBlazorAttrFile>
 		</PropertyGroup>
@@ -66,7 +72,7 @@
 	     build that has the attribute always has the bundle. -->
 	<Target Name="SpawnJSWebWorkersGenerateBundleAttribute"
 			BeforeTargets="CoreCompile"
-			Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(OutputType)' == 'Exe'">
+			Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(_SpawnJSWebWorkersIsWasmApp)' == 'true'">
 		<PropertyGroup>
 			<_SpawnJSWebWorkersAttrFile>$(IntermediateOutputPath)SpawnJSWebWorkersClassicBundle.g.cs</_SpawnJSWebWorkersAttrFile>
 		</PropertyGroup>
@@ -84,12 +90,13 @@
 		</ItemGroup>
 	</Target>
 
-	<!-- Enable gate: opted in, an application (OutputType=Exe - a WASM/Blazor app has an entrypoint and a
-	     _framework runtime; a Razor CLASS LIBRARY is OutputType=Library and has neither, so it must NOT bundle),
+	<!-- Enable gate: opted in, a browser WASM application (_SpawnJSWebWorkersIsWasmApp: WASM SDK + OutputType=Exe - a
+	     WASM/Blazor app has an entrypoint and a _framework runtime; a Razor CLASS LIBRARY is OutputType=Library and a
+	     server/test project is not on the WASM SDK, and neither has one, so they must NOT bundle),
 	     and not an IDE design-time / intellisense build. This makes RCLs that merely reference WebWorkers skip
 	     the rollup automatically - no per-library opt-out flag required. -->
 	<PropertyGroup>
-		<_SpawnJSWebWorkersBundleEnabled Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(OutputType)' == 'Exe' AND '$(DesignTimeBuild)' != 'true' AND '$(BuildingForLiveUnitTesting)' != 'true'">true</_SpawnJSWebWorkersBundleEnabled>
+		<_SpawnJSWebWorkersBundleEnabled Condition="'$(SpawnJSWebWorkersClassicBundle)' == 'true' AND '$(_SpawnJSWebWorkersIsWasmApp)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(BuildingForLiveUnitTesting)' != 'true'">true</_SpawnJSWebWorkersBundleEnabled>
 	</PropertyGroup>
 
 	<!-- BUILD path (dev / F5 / dotnet run): the app is built bundler-friendly (props), so its OWN

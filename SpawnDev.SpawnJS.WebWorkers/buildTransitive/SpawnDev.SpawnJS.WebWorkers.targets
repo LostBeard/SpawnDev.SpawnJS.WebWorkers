@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<!-- Transitive consumers: an app that gets this package THROUGH another package or project (e.g. it references only
+	     SpawnDev.SpawnJS.BrowserExtension). NuGet writes exclude="Build,Analyzers" on a package's dependencies, so such
+	     an app imports only buildTransitive/. The Razor SDK generates buildTransitive/*.props (static web assets ->
+	     build/*.props) but nothing imported build/*.targets, so before 2.2.4 an indirect consumer silently got no
+	     main.classic.js / main.module.js and no bundle attribute. The targets gate every action on a browser WASM app
+	     (UsingMicrosoftNETSdkWebAssembly + OutputType=Exe), so a hosted ASP.NET server or a test project that reaches
+	     this package through a ProjectReference to a WASM client does nothing. -->
+	<Import Project="..\build\SpawnDev.SpawnJS.WebWorkers.targets" />
+
+</Project>

@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.2.3</Version>
-		<PackageReleaseNotes>v2.2.3 - Blazor SDK apps that render Razor without the Blazor JS runtime (SpawnJS.RazorRenderer) get main.classic.js / main.module.js again with no csproj flag: Blazor worker mode now follows blazor.webassembly.js (BlazorWebAssemblyJSPath), not the Blazor SDK.</PackageReleaseNotes>
+		<Version>2.2.4</Version>
+		<PackageReleaseNotes>v2.2.4 - Apps that get WebWorkers only through another package or project (e.g. they reference only SpawnDev.SpawnJS.BrowserExtension) now build main.classic.js / main.module.js: the build targets ship in buildTransitive/, gated to browser WASM apps so server and test projects are untouched.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -41,6 +41,7 @@
 
 	<!-- Classic/module bundle build integration (mirrors SpawnDev.BlazorJS.WebWorkers).
 	     build\      -> MSBuild props/targets auto-imported into the consumer's build.
+	     buildTransitive\ -> .targets for apps that reference this package only indirectly (imports build\ targets).
 	     buildcontent\ -> Rollup entry (loader.js), self-contained Rollup (rollup.bundled.mjs), event-holder.
 	     tasks\      -> compiled MSBuild task assembly (from SpawnDev.SpawnJS.WebWorkers.Build).
 	     These folders are not part of the library compile; they are packed into the NuGet package. -->
@@ -49,6 +50,11 @@
 		<Content Remove="build\**" />
 		<EmbeddedResource Remove="build\**" />
 		<None Remove="build\**" />
+
+		<Compile Remove="buildTransitive\**" />
+		<Content Remove="buildTransitive\**" />
+		<EmbeddedResource Remove="buildTransitive\**" />
+		<None Remove="buildTransitive\**" />
 
 		<Compile Remove="buildcontent\**" />
 		<Content Remove="buildcontent\**" />
@@ -63,6 +69,11 @@
 		<Content Include="build\**">
 			<Pack>true</Pack>
 			<PackagePath>build</PackagePath>
+		</Content>
+		<!-- buildTransitive\*.targets only: the Razor SDK generates buildTransitive\*.props itself (static web assets). -->
+		<Content Include="buildTransitive\**">
+			<Pack>true</Pack>
+			<PackagePath>buildTransitive</PackagePath>
 		</Content>
 		<Content Include="buildcontent\**">
 			<Pack>true</Pack>

@@ -108,6 +108,15 @@ with a Blazor page boot, for two reasons:
 You should not need either. Before 2.2.3 the package checked only the SDK, so RazorRenderer apps had to set
 `<SpawnJSWebWorkersBlazor>false</SpawnJSWebWorkersBlazor>`. That line is now redundant but harmless.
 
+**Indirect references work too (2.2.4+).** Your app does not have to reference this package itself. If it gets it
+through another package or project (for example it references only `SpawnDev.SpawnJS.BrowserExtension`), the build
+targets reach it through the package's `buildTransitive/` folder and the bundle is built the same way. Everything the
+targets do is limited to browser WASM applications (`Microsoft.NET.Sdk.WebAssembly` or the Blazor WASM SDK, and
+`OutputType=Exe`). A hosted ASP.NET server, a test project, or a class library that reaches this package through a
+reference is left alone. Before 2.2.4 an indirect reference silently got no `main.classic.js` / `main.module.js`,
+because NuGet does not pass a dependency's `build/` folder on to the app (it writes `exclude="Build,Analyzers"` on
+package dependencies).
+
 ## Worker bundle
 
 > Applies to apps that do **not** ship `blazor.webassembly.js`: plain .Net WASM (`Microsoft.NET.Sdk.WebAssembly`)
@@ -671,6 +680,13 @@ Run the tests:
 dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner
 dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- SharedWebWorkersByName   # filter by name
 dotnet run --project SpawnDev.SpawnJS.WebWorkers.TestRunner -- --headed                 # watch it in a real browser
+```
+
+Build-integration tests (no browser):
+```
+powershell -ExecutionPolicy Bypass -File Tests\BuildProps\check.ps1    # Blazor / bundle switches for each app shape
+powershell -ExecutionPolicy Bypass -File Tests\Transitive\check.ps1    # restores real consumers of the built nupkg: direct,
+                                                                         # indirect (package + project) and a server project
 ```
 
 # Support for You
