@@ -10,6 +10,10 @@ $cases = @(
     @{ Name = 'plain WASM SDK (Demo)'; Project = 'SpawnDev.SpawnJS.WebWorkers.Demo\SpawnDev.SpawnJS.WebWorkers.Demo.csproj';
        Expect = @{ SpawnJSWebWorkersBlazor = 'false'; SpawnJSWebWorkersClassicBundle = 'true'; WasmBundlerFriendlyBootConfig = 'true' } },
     @{ Name = 'Blazor SDK, csproj opts out (RazorRenderer app / browser extension)'; Project = 'Tests\BuildProps\BlazorSdkOptOut\BlazorSdkOptOut.csproj';
+       Expect = @{ SpawnJSWebWorkersBlazor = 'false'; SpawnJSWebWorkersClassicBundle = 'true'; WasmBundlerFriendlyBootConfig = 'true' } },
+    # 2.1.19 - 2.2.2 regression: Blazor mode keyed on the Blazor SDK, so a RazorRenderer app with no opt-out shipped no
+    # main.classic.js. Blazor mode must follow blazor.webassembly.js (BlazorWebAssemblyJSPath), not the SDK.
+    @{ Name = 'Blazor SDK, no Blazor JS runtime, no opt-out (RazorRenderer app)'; Project = 'Tests\BuildProps\BlazorSdkRazorRenderer\BlazorSdkRazorRenderer.csproj';
        Expect = @{ SpawnJSWebWorkersBlazor = 'false'; SpawnJSWebWorkersClassicBundle = 'true'; WasmBundlerFriendlyBootConfig = 'true' } }
 )
 $failed = 0

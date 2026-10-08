@@ -2,6 +2,22 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.3 - 2026-10-08
+
+- **Fix: Blazor SDK apps that do not use the Blazor JS runtime get `main.classic.js` / `main.module.js` again
+  (2.1.19 - 2.2.2 regression).** Blazor worker mode (`SpawnJSWebWorkersBlazor=true`, which turns the classic bundle
+  off) keyed on the Blazor SDK alone. SpawnJS.RazorRenderer apps use that SDK only to compile `.razor` and boot through
+  `main.classic.js`, so they published without it and the page failed with `SyntaxError: Unexpected token '<'`
+  unless the csproj set `<SpawnJSWebWorkersBlazor>false</...>`. Blazor mode now also requires
+  `BlazorWebAssemblyJSPath`, set by `Microsoft.AspNetCore.Components.WebAssembly`'s `build/*.props`. It is the property
+  the Blazor SDK adds `blazor.webassembly.js` from, so it is set exactly when the app ships the Blazor JS runtime. The
+  opt-out line still works and is now redundant. Real Blazor apps are unchanged.
+- Docs: README "How the boot path is chosen" and Docs/blazor.md explain the detection, and why a Blazor app cannot use
+  the bundle. The bundle's `WasmBundlerFriendlyBootConfig` makes `dotnet.js` import `.wasm` assets bundler-style,
+  which `blazor.webassembly.js` cannot load, and `main.classic.js` boots with `runMain` without `Blazor.start()`.
+- Test: `Tests/BuildProps/check.ps1` adds a fourth consumer shape (Blazor SDK, no Components.WebAssembly, no opt-out).
+  12/12 pass. Red-checked with the SDK-only condition restored: the new case fails all 3 assertions.
+
 ## 2.2.2 - 2026-10-06
 
 Offline PWAs with a .NET ServiceWorker (classic bundle). Found with MiniRover, which now opens with no network.

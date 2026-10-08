@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+	<!-- Build-props fixture (never built, only evaluated by Tests/BuildProps/check.ps1).
+	     A SpawnJS.RazorRenderer app: Blazor SDK to compile .razor, NO Microsoft.AspNetCore.Components.WebAssembly (so no
+	     blazor.webassembly.js) and NO opt-out property. It boots through main.classic.js, so the classic bundle must be
+	     on by default. Imports props at the top and targets at the bottom, the same order NuGet imports a package's
+	     build/ files. -->
+	<Import Project="..\..\..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.props" />
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+	</PropertyGroup>
+	<Import Project="..\..\..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets" />
+</Project>

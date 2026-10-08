@@ -6,10 +6,13 @@
 	     WasmBundlerFriendlyBootConfig is only read inside the WASM SDK's _ResolveWasmConfiguration target, so an
 	     evaluation-time default set here reaches it. -->
 	<PropertyGroup>
-		<!-- Blazor WebAssembly SDK (Microsoft.NET.Sdk.BlazorWebAssembly sets UsingMicrosoftNETSdkBlazorWebAssembly) means
-		     workers boot via faux-env + blazor.webassembly.js + Blazor.start. An app that uses the Blazor SDK only to
-		     compile .razor (SpawnJS.RazorRenderer, no Blazor JS runtime) sets SpawnJSWebWorkersBlazor=false. -->
-		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == '' AND '$(UsingMicrosoftNETSdkBlazorWebAssembly)' == 'true'">true</SpawnJSWebWorkersBlazor>
+		<!-- Blazor worker boot (faux-env + blazor.webassembly.js + Blazor.start) only when the app actually ships the
+		     Blazor JS runtime. The Blazor SDK alone is NOT that signal: SpawnJS.RazorRenderer apps use the Blazor SDK
+		     only to compile .razor and boot through main.classic.js (2.1.19 - 2.2.2 keyed on the SDK and left them with
+		     no main.classic.js). BlazorWebAssemblyJSPath is set by Microsoft.AspNetCore.Components.WebAssembly's
+		     build/*.props and is the exact property the Blazor SDK (_ResolveBlazorWasmOutputs) adds blazor.webassembly.js
+		     from, so it is empty precisely when there is no blazor.webassembly.js. Explicit csproj values still win. -->
+		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == '' AND '$(UsingMicrosoftNETSdkBlazorWebAssembly)' == 'true' AND '$(BlazorWebAssemblyJSPath)' != ''">true</SpawnJSWebWorkersBlazor>
 		<SpawnJSWebWorkersBlazor Condition="'$(SpawnJSWebWorkersBlazor)' == ''">false</SpawnJSWebWorkersBlazor>
 
 		<!-- Classic/module bundle (main.classic.js / main.module.js) for plain .Net WASM. Default ON for non-Blazor,

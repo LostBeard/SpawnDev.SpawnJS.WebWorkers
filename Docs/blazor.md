@@ -23,8 +23,38 @@ For BlazorJS interop (not SpawnJS), use [SpawnDev.BlazorJS.WebWorkers](https://g
 <PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.1.*" />
 ```
 
-`Microsoft.NET.Sdk.BlazorWebAssembly` sets `UsingMicrosoftNETSdkBlazorWebAssembly=true`. The WebWorkers
-package then sets `SpawnJSWebWorkersBlazor=true` automatically (see [build-properties.md](build-properties.md)).
+Your app also references `Microsoft.AspNetCore.Components.WebAssembly` (every Blazor WASM template does); that
+package is what ships `blazor.webassembly.js`. The WebWorkers package sets `SpawnJSWebWorkersBlazor=true`
+automatically when **both** are true:
+
+- the project uses `Microsoft.NET.Sdk.BlazorWebAssembly` (`UsingMicrosoftNETSdkBlazorWebAssembly=true`), and
+- `BlazorWebAssemblyJSPath` is set. `Microsoft.AspNetCore.Components.WebAssembly`'s `build/*.props` sets it, and it is
+  the exact property the Blazor SDK adds `blazor.webassembly.js` to your app from.
+
+See [build-properties.md](build-properties.md).
+
+### Blazor SDK without the Blazor JS runtime (SpawnJS.RazorRenderer)
+
+An app can use the Blazor SDK only to compile `.razor` and render through
+[SpawnDev.SpawnJS.RazorRenderer](https://github.com/LostBeard/SpawnDev.SpawnJS.RazorRenderer), with no
+`Microsoft.AspNetCore.Components.WebAssembly` reference. It has no `blazor.webassembly.js`, so its page boots through
+`main.classic.js` / `main.module.js` like a plain .Net WASM app. `BlazorWebAssemblyJSPath` is empty, so
+`SpawnJSWebWorkersBlazor` stays `false` and the bundle is built. Nothing to set.
+
+2.1.19 - 2.2.2 checked only the SDK. Those versions put RazorRenderer apps in Blazor mode, so they shipped no
+`main.classic.js` and the page failed with `SyntaxError: Unexpected token '<'` (the server's SPA fallback answered
+the missing script with `index.html`). The workaround was `<SpawnJSWebWorkersBlazor>false</SpawnJSWebWorkersBlazor>`;
+it is now redundant but harmless.
+
+### Why Blazor apps do not get the classic bundle
+
+The bundle is not left off because Rollup fails. It cannot coexist with a Blazor page boot:
+
+1. The bundle requires `WasmBundlerFriendlyBootConfig=true`. That makes the app's own `_framework/dotnet.js`
+   import its assets bundler-style (`import dotnet_native from "./dotnet.native.<fp>.wasm"`), which a browser cannot
+   load directly. `blazor.webassembly.js` loads `dotnet.js` directly, so the Window would stop booting.
+2. `main.classic.js` boots with `dotnet.js` + `runMain`, which skips `Blazor.start()`. `CreateDefault` then throws
+   `ES6 module blazor-internal was not imported yet` in the worker (see above).
 
 ## Program.cs
 
@@ -83,14 +113,16 @@ Keep the stock Blazor bootloader. Do **not** point the page at `main.classic.js`
 | Blazor WASM | `spawndev.spawnjs.webworkers.module.js` (module) | faux-env + parse `index.html` for fingerprinted `blazor.webassembly.*.js` + `Blazor.start()` |
 | Blazor WASM (classic script URL) | `spawndev.spawnjs.webworkers.js` | same idea via `importScripts` + import-map-aware `importOverride` |
 | Plain .Net WASM | `main.classic.js` | event-holder + `dotnet.js` + `runMain` |
+| Blazor SDK, no `blazor.webassembly.js` (RazorRenderer) | `main.classic.js` | same as plain .Net WASM |
 
 Blazor workers default to the **module** entry so native `import()` handles .Net 10 import maps and
 `#private` fields. The classic Blazor script remains available if you pass an explicit classic `ScriptUrl`.
 
 ## MSBuild notes
 
-- `SpawnJSWebWorkersClassicBundle` defaults to **false** for Blazor so `WasmBundlerFriendlyBootConfig` is
-  not forced onto the page boot.
+- `SpawnJSWebWorkersClassicBundle` defaults to **false** for apps that ship `blazor.webassembly.js` so
+  `WasmBundlerFriendlyBootConfig` is not forced onto the page boot (see
+  [Why Blazor apps do not get the classic bundle](#why-blazor-apps-do-not-get-the-classic-bundle)).
 - `SpawnJSWebWorkersBlazor` stamps `[assembly: SpawnJSWebWorkersBlazor(true)]` so every scope (Window and
   workers) resolves the Blazor entry via reflection - no DOM/fetch.
 - With a **ProjectReference** to WebWorkers (Debug inner loop), NuGet does not auto-import `build/`

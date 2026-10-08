@@ -24,6 +24,9 @@ SpawnDev.SpawnJS.WebWorkers is the [SpawnDev.SpawnJS](https://github.com/LostBea
 
 - **Plain .Net WASM** (`Microsoft.NET.Sdk.WebAssembly`) via the classic/module bundle (`main.classic.js` / `main.module.js`) built from your app's own output. Uses `SpawnJSAppBuilder` (or your own DI) - no Blazor host required.
 - **Blazor WASM** (`Microsoft.NET.Sdk.BlazorWebAssembly` + [SpawnDev.SpawnJS.Blazor](https://github.com/LostBeard/SpawnDev.SpawnJS)) via Blazor worker scripts (`spawndev.spawnjs.webworkers.js` / `.module.js`) that install a faux DOM, load `blazor.webassembly.js`, and call `Blazor.start()` before managed `WebAssemblyHostBuilder.CreateDefault` (required so `blazor-internal` / NavigationManager is registered).
+- **Razor components without the Blazor JS runtime** (`Microsoft.NET.Sdk.BlazorWebAssembly` used only to compile `.razor`, e.g. [SpawnDev.SpawnJS.RazorRenderer](https://github.com/LostBeard/SpawnDev.SpawnJS.RazorRenderer)) via the same classic/module bundle as plain .Net WASM.
+
+Which of these your app gets is detected at build time - see [How the boot path is chosen](#how-the-boot-path-is-chosen).
 
 If you use BlazorJS interop instead of SpawnJS, use [SpawnDev.BlazorJS.WebWorkers](https://github.com/LostBeard/SpawnDev.BlazorJS.WebWorkers).
 
@@ -31,6 +34,7 @@ If you use BlazorJS interop instead of SpawnJS, use [SpawnDev.BlazorJS.WebWorker
 - .Net 10
 - .Net WebAssembly Standalone App (`Microsoft.NET.Sdk.WebAssembly`)
 - Blazor WebAssembly App (`Microsoft.NET.Sdk.BlazorWebAssembly`) with SpawnDev.SpawnJS.Blazor
+- Blazor SDK app without the Blazor JS runtime (SpawnDev.SpawnJS.RazorRenderer)
 
 Tested working in the following browsers. Note that Chrome on Android does not currently support SharedWorkers.
 
@@ -70,10 +74,46 @@ await builder.Build().SpawnJSRunAsync();
 Requires [SpawnDev.SpawnJS.Blazor](https://www.nuget.org/packages/SpawnDev.SpawnJS.Blazor). The
 `SpawnDev.SpawnJS.WebWorkers.DemoBlazor` project in this repo is a working sample.
 
+## How the boot path is chosen
+
+A worker is a full second copy of your app, so it has to boot the same way your page does. The package picks the
+worker boot path at build time from **one question: does your app ship `blazor.webassembly.js`?** Which SDK the
+project uses does not decide it.
+
+| Your app | Ships `blazor.webassembly.js`? | Worker boot | Bundle (`main.classic.js` / `main.module.js`) |
+|---|---|---|---|
+| Plain .Net WASM (`Microsoft.NET.Sdk.WebAssembly`) | no | `main.classic.js` | **built** |
+| Blazor SDK used only to compile `.razor` (SpawnJS.RazorRenderer, browser extensions) | no | `main.classic.js` | **built** |
+| Blazor WASM app (Blazor SDK + `Microsoft.AspNetCore.Components.WebAssembly`) | yes | `spawndev.spawnjs.webworkers.module.js` (faux DOM + `Blazor.start`) | not built |
+
+**How it is detected.** `blazor.webassembly.js` comes from the `Microsoft.AspNetCore.Components.WebAssembly`
+package, whose `build/*.props` sets the MSBuild property `BlazorWebAssemblyJSPath`. The Blazor SDK adds
+`blazor.webassembly.js` to your app from exactly that property. So the package sets
+`SpawnJSWebWorkersBlazor=true` only when the project uses the Blazor SDK **and** `BlazorWebAssemblyJSPath` is set.
+An app that uses the Blazor SDK without that package (a RazorRenderer app) has no `blazor.webassembly.js`, boots
+through `main.classic.js`, and gets the bundle.
+
+**Why a Blazor app does not get the bundle.** It is not that Rollup fails on a Blazor app. The bundle cannot coexist
+with a Blazor page boot, for two reasons:
+
+1. The bundle needs `WasmBundlerFriendlyBootConfig=true`, which rewrites your app's own `_framework/dotnet.js` to
+   import its assets the way a bundler expects (`import dotnet_native from "./dotnet.native.<fp>.wasm"`). A browser
+   cannot load that `dotnet.js` directly, and `blazor.webassembly.js` loads it directly, so the page would stop booting.
+2. `main.classic.js` boots .Net with plain `dotnet.js` + `runMain`. A Blazor app's `WebAssemblyHostBuilder.CreateDefault`
+   needs `Blazor.start()` to have registered the `blazor-internal` JS module first, so a worker booted that way throws
+   `ES6 module blazor-internal was not imported yet`.
+
+**Overriding it.** Both switches can be set in your csproj, and your value always wins:
+`<SpawnJSWebWorkersBlazor>` (Blazor worker boot on/off) and `<SpawnJSWebWorkersClassicBundle>` (bundle on/off).
+You should not need either. Before 2.2.3 the package checked only the SDK, so RazorRenderer apps had to set
+`<SpawnJSWebWorkersBlazor>false</SpawnJSWebWorkersBlazor>`. That line is now redundant but harmless.
+
 ## Worker bundle
 
-> Applies to **plain .Net WASM** apps (`Microsoft.NET.Sdk.WebAssembly`). Blazor WASM apps use a different
-> worker entry - see [Blazor WASM](#blazor-wasm) and [Docs/blazor.md](Docs/blazor.md).
+> Applies to apps that do **not** ship `blazor.webassembly.js`: plain .Net WASM (`Microsoft.NET.Sdk.WebAssembly`)
+> and Blazor SDK apps that render Razor without the Blazor JS runtime (SpawnJS.RazorRenderer). Blazor WASM apps use
+> a different worker entry - see [How the boot path is chosen](#how-the-boot-path-is-chosen) and
+> [Docs/blazor.md](Docs/blazor.md).
 
 > **New in 1.0.0** - workers now load a **classic or module bundle** built from your app's own output (`main.classic.js` / `main.module.js`), replacing the old module-only worker script. This is what makes the app runnable as a classic `<script>` / `importScripts()` and in browser-extension scopes. See [Docs/build-properties.md](Docs/build-properties.md) for the MSBuild properties (including the publish-only browser-extension folder rename).
 
@@ -105,7 +145,7 @@ Because the app boots through the bundle, point your `index.html` module script 
 
 ### Opting out
 
-Set `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` to skip the bundle build (already the default for Blazor WASM apps). For plain .Net WASM the app is then a normal (non-bundler-friendly) app and worker creation falls back to `spawndev.spawnjs.webworkers.dotnet.module.js`, which only works when asset fingerprinting is off.
+Set `<SpawnJSWebWorkersClassicBundle>false</SpawnJSWebWorkersClassicBundle>` to skip the bundle build (already the default for apps that ship `blazor.webassembly.js`). For plain .Net WASM the app is then a normal (non-bundler-friendly) app and worker creation falls back to `spawndev.spawnjs.webworkers.dotnet.module.js`, which only works when asset fingerprinting is off.
 
 ### Browser extensions - renaming `_framework`
 
