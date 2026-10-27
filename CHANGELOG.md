@@ -2,6 +2,14 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.5 - 2026-10-27
+
+- **Depends on SpawnDev.SpawnJS 3.0.5** (was 3.0.0). 3.0.5 fixes `JSTape` allocating memory quadratic in a message's
+  size once a call's arguments outgrew one tape segment (64 KB): a big `PostMessage` to a worker could run the
+  browser out of memory (1,500 MB in 3,002 pinned segments for a 250,000-character string plus 3,000 small values;
+  now 1.9 MB). An app that got SpawnJS only through this package stayed on 3.0.0. No change of its own. Tests: 19/0
+  (TestRunner `--debug`, the working tree).
+
 ## 2.2.4 - 2026-10-08
 
 - **Fix: an app that gets this package only through another package or project now gets the worker bundle.** NuGet
