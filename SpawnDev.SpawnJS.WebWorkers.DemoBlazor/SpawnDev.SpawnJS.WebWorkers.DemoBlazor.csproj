@@ -15,7 +15,7 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" />
 		<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.12" PrivateAssets="all" />
-		<PackageReference Include="SpawnDev.SpawnJS.Blazor" Version="3.0.5" />
+		<PackageReference Include="SpawnDev.SpawnJS.Blazor" Version="3.0.8" />
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -23,7 +23,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.5" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.6" />
 	</ItemGroup>
 
 	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets" Condition=" '$(Configuration)' == 'Debug' " />

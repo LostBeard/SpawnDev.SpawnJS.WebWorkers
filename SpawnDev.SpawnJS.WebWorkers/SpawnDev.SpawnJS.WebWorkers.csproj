@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.2.5</Version>
-		<PackageReleaseNotes>v2.2.4 - Apps that get WebWorkers only through another package or project (e.g. they reference only SpawnDev.SpawnJS.BrowserExtension) now build main.classic.js / main.module.js: the build targets ship in buildTransitive/, gated to browser WASM apps so server and test projects are untouched.</PackageReleaseNotes>
+		<Version>2.2.6</Version>
+		<PackageReleaseNotes>v2.2.6 - Depends on SpawnDev.SpawnJS 3.0.10 (was 3.0.5): WebAuthn JSON converters, trimmed apps about 630 KB smaller (a narrower trim descriptor) and the 3.0.6 - 3.0.8 fixes (see SpawnDev.SpawnJS's CHANGELOG). An app that got SpawnJS only through this package stayed on 3.0.5. No change of its own. v2.2.4 - Apps that get WebWorkers only through another package or project (e.g. they reference only SpawnDev.SpawnJS.BrowserExtension) now build main.classic.js / main.module.js: the build targets ship in buildTransitive/, gated to browser WASM apps so server and test projects are untouched.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -86,7 +86,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="SpawnDev.SpawnJS" Version="3.0.5" />
+		<PackageReference Include="SpawnDev.SpawnJS" Version="3.0.10" />
 	</ItemGroup>
 	
 	<PropertyGroup>

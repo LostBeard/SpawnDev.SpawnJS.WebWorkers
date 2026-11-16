@@ -2,6 +2,10 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.6 - 2026-11-16
+
+- **Depends on SpawnDev.SpawnJS 3.0.10 (was 3.0.5): WebAuthn JSON converters, trimmed apps about 630 KB smaller (a narrower trim descriptor) and the 3.0.6 - 3.0.8 fixes (see SpawnDev.SpawnJS's CHANGELOG). An app that got SpawnJS only through this package stayed on 3.0.5.** No change of its own. The demos move to 2.2.6 (and DemoBlazor to SpawnDev.SpawnJS.Blazor 3.0.8).
+
 ## 2.2.5 - 2026-10-27
 
 - **Depends on SpawnDev.SpawnJS 3.0.5** (was 3.0.0). 3.0.5 fixes `JSTape` allocating memory quadratic in a message's
