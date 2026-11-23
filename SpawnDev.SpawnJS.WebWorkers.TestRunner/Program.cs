@@ -25,6 +25,13 @@ var headed = false;
 var externalUrl = "";
 var verbose = false;
 var configuration = "Release";
+// --app <project folder>: the app to test. Default: the non-Blazor Demo. SpawnDev.SpawnJS.WebWorkers.DemoBlazor covers what only a
+// Blazor app exercises (a classic-mode worker boots the Blazor runtime through the module patcher).
+var appDir = "SpawnDev.SpawnJS.WebWorkers.Demo";
+// --published: publish the app and serve the PUBLISHED wwwroot (what a deployed app ships) instead of `dotnet run`. The dev
+// server serves plain asset names too, which hides bugs that only fingerprinted output shows (a .NET 10 publish with
+// OverrideHtmlAssetPlaceholders ships only dotnet.<hash>.js; a module worker asked for the plain dotnet.js and never booted).
+var published = false;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -34,10 +41,12 @@ for (var i = 0; i < args.Length; i++)
         case "--debug": configuration = "Debug"; break;
         case "--config": configuration = ++i < args.Length ? args[i] : "Release"; break;
         case "--url": externalUrl = ++i < args.Length ? args[i] : ""; break;
+        case "--app": appDir = ++i < args.Length ? args[i] : appDir; break;
+        case "--published": published = true; break;
         case "--filter": filter = ++i < args.Length ? args[i] : ""; break;
         case "-h":
         case "--help":
-            Console.WriteLine("usage: [filter] [--filter <text>] [--headed] [--verbose] [--debug] [--config <name>] [--url <url>]");
+            Console.WriteLine("usage: [filter] [--filter <text>] [--headed] [--verbose] [--debug] [--config <name>] [--url <url>] [--app <project folder>] [--published]");
             Console.WriteLine("  --debug  build the Demo in Debug, which references the library by project (tests YOUR edits).");
             Console.WriteLine("           The default Release build references the PUBLISHED package instead.");
             return 0;
@@ -48,17 +57,26 @@ for (var i = 0; i < args.Length; i++)
 }
 
 var repoRoot = FindRepoRoot();
-var demoProject = Path.Combine(repoRoot, "SpawnDev.SpawnJS.WebWorkers.Demo", "SpawnDev.SpawnJS.WebWorkers.Demo.csproj");
+var demoProject = Path.Combine(repoRoot, appDir, appDir + ".csproj");
 if (!File.Exists(demoProject))
 {
-    Console.Error.WriteLine($"Could not find SpawnDev.SpawnJS.WebWorkers.Demo.csproj (looked in {demoProject})");
+    Console.Error.WriteLine($"Could not find {appDir}.csproj (looked in {demoProject})");
     return 1;
 }
 
 Process? server = null;
+StaticSiteServer? staticServer = null;
 var url = externalUrl;
 try
 {
+    if (string.IsNullOrEmpty(url) && published)
+    {
+        var wwwroot = PublishApp(demoProject, configuration);
+        if (wwwroot == null) return 1;
+        staticServer = new StaticSiteServer(wwwroot);
+        url = staticServer.Url;
+        Console.WriteLine($"serving the published app: {wwwroot} at {url}");
+    }
     if (string.IsNullOrEmpty(url))
     {
         (server, url) = await StartServerAsync(demoProject, configuration);
@@ -79,6 +97,31 @@ finally
     {
         try { server.Kill(entireProcessTree: true); } catch { }
     }
+    staticServer?.Dispose();
+}
+
+// dotnet publish into a fresh temp folder; returns its wwwroot (null on failure)
+static string? PublishApp(string project, string configuration)
+{
+    var output = Path.Combine(Path.GetTempPath(), "spawnjs-webworkers-published", Path.GetFileNameWithoutExtension(project));
+    if (Directory.Exists(output)) Directory.Delete(output, true);
+    Console.WriteLine($"publishing {Path.GetFileNameWithoutExtension(project)} [{configuration}] to {output}");
+    var psi = new ProcessStartInfo("dotnet", $"publish \"{project}\" -c {configuration} -o \"{output}\"")
+    {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+    };
+    using var p = Process.Start(psi)!;
+    var stdout = p.StandardOutput.ReadToEndAsync();
+    var stderr = p.StandardError.ReadToEndAsync();
+    p.WaitForExit();
+    if (p.ExitCode != 0)
+    {
+        Console.Error.WriteLine($"publish failed ({p.ExitCode}):\n{stdout.Result}\n{stderr.Result}");
+        return null;
+    }
+    return Path.Combine(output, "wwwroot");
 }
 
 // walks up from the assembly location to the folder holding the solution
@@ -100,7 +143,7 @@ static async Task<(Process?, string)> StartServerAsync(string demoProject, strin
     var testing = configuration == "Debug"
         ? "this working tree (ProjectReference)"
         : "the PUBLISHED package (PackageReference) - local library edits are NOT included";
-    Console.WriteLine($"building and starting SpawnDev.SpawnJS.WebWorkers.Demo [{configuration}]");
+    Console.WriteLine($"building and starting {Path.GetFileNameWithoutExtension(demoProject)} [{configuration}]");
     Console.WriteLine($"  testing: {testing}");
     var psi = new ProcessStartInfo("dotnet", $"run -c {configuration} --project \"{demoProject}\"")
     {
@@ -112,7 +155,8 @@ static async Task<(Process?, string)> StartServerAsync(string demoProject, strin
     if (process == null) return (null, "");
 
     var urlFound = new TaskCompletionSource<string>();
-    var appUrl = new Regex(@"App url:\s*(http://\S+)", RegexOptions.IgnoreCase);
+    // the Demo prints "App url: ..."; a Blazor app's dev server prints "Now listening on: ..."
+    var appUrl = new Regex(@"(?:App url|Now listening on):\s*(http://\S+)", RegexOptions.IgnoreCase);
     process.OutputDataReceived += (_, e) =>
     {
         if (e.Data == null) return;

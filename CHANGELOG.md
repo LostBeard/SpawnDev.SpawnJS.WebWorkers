@@ -2,6 +2,28 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.7 - 2026-11-23 - Blazor workers boot in a published (fingerprinted) .NET 10 app
+
+- **FIX: a Blazor app's worker could not boot from a PUBLISHED .NET 10 app with fingerprinted assets.** A .NET 10 publish with
+  `OverrideHtmlAssetPlaceholders` (the template's setting) ships only `_framework/dotnet.<hash>.js` and maps the plain name to it
+  in index.html's import map. Blazor imports the runtime entry by its plain name; a worker has no import map, so the module
+  worker (`spawndev.spawnjs.webworkers.module.js`, the default for Blazor apps) requested `_framework/dotnet.js`, got a 404 and
+  never answered. The worker now starts Blazor with a `loadBootResource` that resolves the `dotnetjs` resource through the import
+  map it parses from index.html. `dotnet run` (the dev server serves plain names too) and apps without fingerprinting were not
+  affected, which is how it went unseen. Found 2026-11-23: a published DemoBlazor's worker timed out; a plain-named copy of
+  `dotnet.js` made it boot; with the fix it boots without one.
+- **TEST: the TestRunner can test the Blazor demo and the PUBLISHED app.** `--app SpawnDev.SpawnJS.WebWorkers.DemoBlazor` runs the
+  Blazor demo's self-tests (`?tests=`, `WorkerSelfTests`: a worker boots and runs the app's JS initializer, which calls its own
+  export); `--published` publishes the app and serves the published wwwroot (`StaticSiteServer`) instead of `dotnet run`. Red with
+  the previous worker script (no answer in 30 s), green with 2.2.7; the Demo suite 19/19 both with `dotnet run` and `--published`.
+- **FIX: a module loaded in a worker can call its own exported function.** When the worker loads a module through the module
+  patcher (no dynamic import in the worker, or an import map in index.html, which every .NET 10 template app has), the patcher
+  rewrote `export function X` into the function EXPRESSION `_exportsOverride.X = function X`, whose name is bound only inside
+  itself. A module whose own code calls its exported function threw "X is not defined": a Blazor JS initializer doing that
+  (SpawnDev.Blazor.BootRecovery 1.0.0 calls `installBootRecovery()`) stopped the worker's .NET boot. Exported functions now stay
+  declarations (hoisted, bound in the module scope as in a real ES module) and are added to the exports after the module body.
+  Found 2026-11-22 (same patcher in SpawnDev.BlazorJS.WebWorkers 3.2.9).
+
 ## 2.2.6 - 2026-11-16
 
 - **Depends on SpawnDev.SpawnJS 3.0.10 (was 3.0.5): WebAuthn JSON converters, trimmed apps about 630 KB smaller (a narrower trim descriptor) and the 3.0.6 - 3.0.8 fixes (see SpawnDev.SpawnJS's CHANGELOG). An app that got SpawnJS only through this package stayed on 3.0.5.** No change of its own. The demos move to 2.2.6 (and DemoBlazor to SpawnDev.SpawnJS.Blazor 3.0.8).

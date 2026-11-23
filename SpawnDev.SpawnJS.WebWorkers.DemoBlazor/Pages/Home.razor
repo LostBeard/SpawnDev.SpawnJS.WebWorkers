@@ -13,6 +13,15 @@ Welcome to your new app.
     [Inject]
     WebWorkerService _webWorkerService { get; set; } = default!;
 
+    [Inject]
+    NavigationManager _navigation { get; set; } = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // ?tests= runs the self-tests (the TestRunner's protocol: TEST: / RESULTS: console lines)
+        if (firstRender && new Uri(_navigation.Uri).Query.Contains("tests=")) await WorkerSelfTests.RunAsync(_webWorkerService);
+    }
+
     async Task Clicked()
     {
         using var worker = await _webWorkerService.GetWebWorker();

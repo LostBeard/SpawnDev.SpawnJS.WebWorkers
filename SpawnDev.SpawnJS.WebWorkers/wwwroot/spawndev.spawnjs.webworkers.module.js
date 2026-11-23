@@ -170,7 +170,19 @@ async function bootBlazor() {
         if (typeof Blazor === 'undefined' || typeof Blazor.start !== 'function') {
             throw new Error('SpawnJS.WebWorkers: Blazor.start not available after loading ' + blazorSrc);
         }
-        Blazor._startTask = Blazor.start();
+        // A worker has no import map. Blazor imports the .NET runtime entry by its plain name (_framework/dotnet.js), which only
+        // the PAGE's import map turns into the fingerprinted file a .NET 10 publish ships (OverrideHtmlAssetPlaceholders, the
+        // template's setting): in a worker that request 404'd and the worker never booted (found 2026-11-23 with a published
+        // DemoBlazor; a plain-named copy of dotnet.js made it boot). Resolve it through the import map parsed from index.html.
+        // Returning undefined keeps Blazor's default for every other resource (and for dotnet.js when nothing maps it).
+        Blazor._startTask = Blazor.start({
+            loadBootResource: function (type, name, defaultUri) {
+                if (type !== 'dotnetjs') return undefined;
+                var absolute = new URL(defaultUri, documentBaseURI).toString();
+                var mapped = getAppURL(defaultUri);
+                return mapped !== absolute ? mapped : undefined;
+            }
+        });
     }
 }
 

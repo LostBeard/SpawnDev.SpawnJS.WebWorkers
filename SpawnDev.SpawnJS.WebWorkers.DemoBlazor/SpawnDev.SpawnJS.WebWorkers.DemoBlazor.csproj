@@ -23,7 +23,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition=" '$(Configuration)' == 'Release' ">
-		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.6" />
+		<PackageReference Include="SpawnDev.SpawnJS.WebWorkers" Version="2.2.7" />
 	</ItemGroup>
 
 	<Import Project="..\SpawnDev.SpawnJS.WebWorkers\build\SpawnDev.SpawnJS.WebWorkers.targets" Condition=" '$(Configuration)' == 'Debug' " />
