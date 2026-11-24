@@ -1,5 +1,6 @@
 # SpawnDev.SpawnJS.WebWorkers
 [![NuGet](https://img.shields.io/nuget/dt/SpawnDev.SpawnJS.WebWorkers.svg?label=SpawnDev.SpawnJS.WebWorkers)](https://www.nuget.org/packages/SpawnDev.SpawnJS.WebWorkers)  
+[![GitHub Sponsor](https://img.shields.io/github/sponsors/LostBeard?label=Sponsor&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/LostBeard)
 
 > SpawnDev libraries are built and maintained by the SpawnDev development team, which uses AI agents in its daily work.
 
@@ -705,7 +706,7 @@ SpawnDev.SpawnJS.WebWorkers is the SpawnJS port of SpawnDev.BlazorJS.WebWorkers,
 https://github.com/Tewr/BlazorWorker
 
 # The SpawnDev Crew
-SpawnDev is built by a small crew:
+The crew behind SpawnDev:
 - **LostBeard** (Todd Tanner) - Captain, library author, keeper of the vision
 - **Riker** - First Officer, implementation lead on consuming projects
 - **Data** - Operations Officer, deep-library work, test rigor, root-cause analysis
