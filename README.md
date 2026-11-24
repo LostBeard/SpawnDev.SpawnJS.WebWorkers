@@ -1,7 +1,7 @@
 # SpawnDev.SpawnJS.WebWorkers
 [![NuGet](https://img.shields.io/nuget/dt/SpawnDev.SpawnJS.WebWorkers.svg?label=SpawnDev.SpawnJS.WebWorkers)](https://www.nuget.org/packages/SpawnDev.SpawnJS.WebWorkers)  
 
-> 💜 **Built and maintained by one independent developer** — no company, no overhead, just code. If SpawnDev.SpawnJS.WebWorkers saves you time, please consider [**sponsoring its development »**](https://github.com/sponsors/LostBeard). Sponsorship is what keeps it alive and maintained.
+> SpawnDev libraries are built and maintained by the SpawnDev development team, which uses AI agents in its daily work.
 
 Run full .Net WebAssembly services in Web Workers, Shared Web Workers, and Service Workers, with transparent cross-thread method invocation - built on [SpawnDev.SpawnJS](https://github.com/LostBeard/SpawnDev.SpawnJS).
 
