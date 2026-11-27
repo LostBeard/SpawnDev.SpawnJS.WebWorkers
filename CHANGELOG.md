@@ -2,6 +2,12 @@
 
 All notable changes to SpawnDev.SpawnJS.WebWorkers.
 
+## 2.2.8 - 2026-11-26 - SpawnDev.SpawnJS 3.0.12
+
+- Depends on SpawnDev.SpawnJS 3.0.12 (was 3.0.10). No code change.
+- SpawnDev.SpawnJS 3.0.12: `SpawnJSRuntime.AppBaseUri` works under Node (a .NET WebAssembly console app); it was
+  empty there (`self` is not declared in Node, and `file:` URLs have the origin "null").
+
 ## 2.2.7 - 2026-11-23 - Blazor workers boot in a published (fingerprinted) .NET 10 app
 
 - **FIX: a Blazor app's worker could not boot from a PUBLISHED .NET 10 app with fingerprinted assets.** A .NET 10 publish with

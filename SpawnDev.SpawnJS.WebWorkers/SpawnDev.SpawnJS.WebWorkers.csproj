@@ -4,8 +4,8 @@
 		<TargetFrameworks>net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>2.2.7</Version>
-		<PackageReleaseNotes>v2.2.7 - FIX: a Blazor app worker boots from a PUBLISHED .NET 10 app with fingerprinted assets (the module worker requested the plain _framework/dotnet.js, which a fingerprinted publish does not ship, and never answered); FIX: a module loaded in a worker can call its own exported function (the module patcher turned exported functions into expressions, so a library JS initializer such as SpawnDev.Blazor.BootRecovery 1.0.0 threw "X is not defined" and the worker never booted). v2.2.6 - Depends on SpawnDev.SpawnJS 3.0.10 (was 3.0.5): WebAuthn JSON converters, trimmed apps about 630 KB smaller (a narrower trim descriptor) and the 3.0.6 - 3.0.8 fixes (see SpawnDev.SpawnJS's CHANGELOG). An app that got SpawnJS only through this package stayed on 3.0.5. No change of its own. v2.2.4 - Apps that get WebWorkers only through another package or project (e.g. they reference only SpawnDev.SpawnJS.BrowserExtension) now build main.classic.js / main.module.js: the build targets ship in buildTransitive/, gated to browser WASM apps so server and test projects are untouched.</PackageReleaseNotes>
+		<Version>2.2.8</Version>
+		<PackageReleaseNotes>v2.2.8 - Depends on SpawnDev.SpawnJS 3.0.12: SpawnJSRuntime.AppBaseUri works under Node (a .NET WebAssembly console app); it was empty there. v2.2.7 - FIX: a Blazor app worker boots from a PUBLISHED .NET 10 app with fingerprinted assets (the module worker requested the plain _framework/dotnet.js, which a fingerprinted publish does not ship, and never answered); FIX: a module loaded in a worker can call its own exported function (the module patcher turned exported functions into expressions, so a library JS initializer such as SpawnDev.Blazor.BootRecovery 1.0.0 threw "X is not defined" and the worker never booted). v2.2.6 - Depends on SpawnDev.SpawnJS 3.0.10 (was 3.0.5): WebAuthn JSON converters, trimmed apps about 630 KB smaller (a narrower trim descriptor) and the 3.0.6 - 3.0.8 fixes (see SpawnDev.SpawnJS's CHANGELOG). An app that got SpawnJS only through this package stayed on 3.0.5. No change of its own. v2.2.4 - Apps that get WebWorkers only through another package or project (e.g. they reference only SpawnDev.SpawnJS.BrowserExtension) now build main.classic.js / main.module.js: the build targets ship in buildTransitive/, gated to browser WASM apps so server and test projects are untouched.</PackageReleaseNotes>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<EmbedAllSources>true</EmbedAllSources>
@@ -86,7 +86,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="SpawnDev.SpawnJS" Version="3.0.10" />
+		<PackageReference Include="SpawnDev.SpawnJS" Version="3.0.12" />
 	</ItemGroup>
 	
 	<PropertyGroup>
